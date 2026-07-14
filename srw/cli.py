@@ -15,11 +15,22 @@ import glob
 import shutil
 import sys
 import argparse
+import tempfile
+import io
 from dataclasses import dataclass
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 DEFAULT_ATTACHMENT_SIZE = 5_000_000  # 5 MB; RAWcooked's own default is 1 MB
+
+# DPX sequences routinely run to tens or hundreds of thousands of frames.
+# MediaConch accepts a file list in one invocation (`mediaconch -p policy f1 f2 ...`),
+# so files are validated in batches rather than one subprocess per file — but the
+# full list still has to fit under the OS's ARG_MAX for a single exec, so it's
+# chunked. 2000 paths comfortably fits (even at ~150 bytes/path that's ~300KB,
+# well under the ~1-2MB ARG_MAX on Linux/macOS) while still cutting subprocess
+# count by ~2000x for a 100k-frame sequence.
+DEFAULT_MEDIACONCH_BATCH_SIZE = 2000
 
 
 @dataclass
@@ -31,6 +42,7 @@ class Config:
     dpx_policy: str
     wav_policy: str
     attachment_size: int
+    mediaconch_batch_size: int = DEFAULT_MEDIACONCH_BATCH_SIZE
 
 
 # Set per-sequence by process_sequence(); read by the step-tracking helpers below.
@@ -109,6 +121,39 @@ def init_log_header():
         )
         with open(LOG_FILE_PATH, "a") as f:
             f.write(resume_note)
+
+
+def run_mediaconch(policy_path, files, csv_format=False):
+    """Runs mediaconch once against a list of files. Uses a fresh, auto-cleaned
+    HOME directory per call (mediaconch reads/writes user-specific config/cache
+    under HOME) instead of the shell-based `HOME=$(mktemp -d) ...` this used to
+    rely on — that spawned an extra bash + mktemp process per call and never
+    cleaned up the temp directory it created."""
+    args = ["mediaconch", "-p", policy_path]
+    if csv_format:
+        args.append("-fc")
+    args.extend(files)
+    with tempfile.TemporaryDirectory(prefix="srw-mediaconch-home-") as home_dir:
+        env = {**os.environ, "HOME": home_dir}
+        return subprocess.run(args, capture_output=True, text=True, env=env)
+
+
+def validate_files_against_policy(files, policy_path, batch_size=DEFAULT_MEDIACONCH_BATCH_SIZE):
+    """Validates files against a MediaConch policy in batches of one subprocess
+    call per `batch_size` files (rather than one call per file), yielding
+    (file_path, is_valid) in the original file order. Batches are only run as
+    the caller actually consumes them, so a caller that stops at the first
+    invalid file (as process_sequence does) never pays for later batches."""
+    for i in range(0, len(files), batch_size):
+        chunk = files[i:i + batch_size]
+        result = run_mediaconch(policy_path, chunk, csv_format=True)
+        passed = set()
+        reader = csv.DictReader(io.StringIO(result.stdout))
+        for row in reader:
+            if row.get("overall") == "pass":
+                passed.add(row["filename"])
+        for f in chunk:
+            yield f, f in passed
 
 
 def verify_md5(file_path, md5_path):
@@ -290,11 +335,11 @@ def process_sequence(source_folder_path, config: Config):
         write_banner("3. MEDIACONCH DPX VALIDATION")
         try:
             dpx_files = sorted(glob.glob(os.path.join(source_folder_path, "**/*.dpx"), recursive=True))
-            for dpx in dpx_files:
+            for dpx, is_valid in validate_files_against_policy(dpx_files, config.dpx_policy, config.mediaconch_batch_size):
                 f_name = os.path.basename(dpx)
-                mc_cmd = f"HOME=$(mktemp -d) mediaconch -p '{config.dpx_policy}' '{dpx}'"
-                res = subprocess.run(mc_cmd, shell=True, capture_output=True, text=True, executable='/bin/bash')
-                if res.returncode != 0 or "fail!" in res.stdout:
+                if not is_valid:
+                    # Re-run just this file for the full human-readable policy detail
+                    res = run_mediaconch(config.dpx_policy, [dpx])
                     write_log(f"  [INVALID] {f_name}")
                     if res.stdout.strip():
                         write_log(f"  [MEDIACONCH OUTPUT]\n{res.stdout.strip()}")
@@ -320,11 +365,10 @@ def process_sequence(source_folder_path, config: Config):
             if not wav_files:
                 write_log("  No .wav files found (picture only). Skipping validation.")
             else:
-                for wav in wav_files:
+                for wav, is_valid in validate_files_against_policy(wav_files, config.wav_policy, config.mediaconch_batch_size):
                     f_name = os.path.basename(wav)
-                    mc_cmd = f"HOME=$(mktemp -d) mediaconch -p '{config.wav_policy}' '{wav}'"
-                    res = subprocess.run(mc_cmd, shell=True, capture_output=True, text=True, executable='/bin/bash')
-                    if res.returncode != 0 or "fail!" in res.stdout:
+                    if not is_valid:
+                        res = run_mediaconch(config.wav_policy, [wav])
                         write_log(f"  [INVALID] {f_name}")
                         if res.stdout.strip():
                             write_log(f"  [MEDIACONCH OUTPUT]\n{res.stdout.strip()}")
@@ -478,6 +522,10 @@ def add_run_arguments(parser):
         "--attachment-size", type=int, default=DEFAULT_ATTACHMENT_SIZE,
         help=f"RAWcooked attachment size limit in bytes, passed as -s (default: {DEFAULT_ATTACHMENT_SIZE})",
     )
+    parser.add_argument(
+        "--mediaconch-batch-size", type=int, default=DEFAULT_MEDIACONCH_BATCH_SIZE,
+        help=f"Number of files validated per MediaConch invocation, instead of one process per file (default: {DEFAULT_MEDIACONCH_BATCH_SIZE})",
+    )
     return parser
 
 
@@ -505,7 +553,7 @@ def check_dependencies():
 def run_main(args):
     """Runs the single-directory-set workflow. `args` is a parsed argparse.Namespace
     with the attributes defined by add_run_arguments() (source_dir, output_dir, docs_dir,
-    mediaconch_dir, dpx_policy, wav_policy, attachment_size)."""
+    mediaconch_dir, dpx_policy, wav_policy, attachment_size, mediaconch_batch_size)."""
     mc_dir = args.mediaconch_dir
     config = Config(
         source_parent=args.source_dir,
@@ -515,6 +563,7 @@ def run_main(args):
         dpx_policy=args.dpx_policy or os.path.join(mc_dir, "DPX_SMPTE-CORE.xml"),
         wav_policy=args.wav_policy or os.path.join(mc_dir, "WAV_policy.xml"),
         attachment_size=args.attachment_size,
+        mediaconch_batch_size=args.mediaconch_batch_size,
     )
 
     if not os.path.exists(config.docs_dir):

@@ -12,6 +12,8 @@ import hashlib
 
 import pytest
 
+import os
+
 import srw.cli as cli
 from srw.cli import (
     Config,
@@ -20,7 +22,10 @@ from srw.cli import (
     is_step_complete,
     get_step_completion_timestamp,
     mark_step_complete,
+    run_mediaconch,
+    validate_files_against_policy,
     DEFAULT_ATTACHMENT_SIZE,
+    DEFAULT_MEDIACONCH_BATCH_SIZE,
 )
 
 
@@ -107,6 +112,7 @@ class TestArgParser:
         assert args.dpx_policy is None
         assert args.wav_policy is None
         assert args.attachment_size == DEFAULT_ATTACHMENT_SIZE
+        assert args.mediaconch_batch_size == DEFAULT_MEDIACONCH_BATCH_SIZE
 
     def test_policy_paths_derive_from_mediaconch_dir(self):
         config = Config(
@@ -120,6 +126,114 @@ class TestArgParser:
         )
         assert config.dpx_policy == "MyPolicies/DPX_SMPTE-CORE.xml"
         assert config.wav_policy == "MyPolicies/WAV_policy.xml"
+        assert config.mediaconch_batch_size == DEFAULT_MEDIACONCH_BATCH_SIZE
+
+
+# ---------------------------------------------------------------------------
+# MediaConch batching (run_mediaconch / validate_files_against_policy)
+#
+# subprocess.run is mocked here rather than shelling out to a real mediaconch
+# binary — these tests cover the batching/parsing/laziness logic itself, not
+# MediaConch's own validation behavior.
+# ---------------------------------------------------------------------------
+
+class FakeCompletedProcess:
+    def __init__(self, stdout="", stderr="", returncode=0):
+        self.stdout = stdout
+        self.stderr = stderr
+        self.returncode = returncode
+
+
+class TestRunMediaConch:
+    def test_builds_expected_command(self, monkeypatch):
+        captured = {}
+
+        def fake_run(args, capture_output, text, env):
+            captured["args"] = args
+            captured["env"] = env
+            return FakeCompletedProcess()
+
+        monkeypatch.setattr(cli.subprocess, "run", fake_run)
+        run_mediaconch("/policy.xml", ["/a.dpx", "/b.dpx"])
+
+        assert captured["args"] == ["mediaconch", "-p", "/policy.xml", "/a.dpx", "/b.dpx"]
+
+    def test_csv_format_adds_flag(self, monkeypatch):
+        captured = {}
+
+        def fake_run(args, capture_output, text, env):
+            captured["args"] = args
+            return FakeCompletedProcess()
+
+        monkeypatch.setattr(cli.subprocess, "run", fake_run)
+        run_mediaconch("/policy.xml", ["/a.dpx"], csv_format=True)
+
+        assert captured["args"] == ["mediaconch", "-p", "/policy.xml", "-fc", "/a.dpx"]
+
+    def test_uses_a_fresh_home_and_cleans_it_up(self, monkeypatch):
+        captured = {}
+
+        def fake_run(args, capture_output, text, env):
+            captured["home"] = env["HOME"]
+            assert os.path.isdir(env["HOME"]), "HOME dir should exist during the call"
+            return FakeCompletedProcess()
+
+        monkeypatch.setattr(cli.subprocess, "run", fake_run)
+        run_mediaconch("/policy.xml", ["/a.dpx"])
+
+        # The old shell-based `HOME=$(mktemp -d) ...` version never cleaned this
+        # up — regression check that the replacement does.
+        assert not os.path.isdir(captured["home"])
+
+
+class TestValidateFilesAgainstPolicy:
+    def _fake_run_factory(self, calls, fail_substring=None):
+        def fake_run(args, capture_output, text, env):
+            files_arg = args[4:]  # ["mediaconch", "-p", policy, "-fc", *files]
+            calls.append(list(files_arg))
+            rows = ["filename,overall"]
+            for f in files_arg:
+                status = "fail" if fail_substring and fail_substring in f else "pass"
+                rows.append(f"{f},{status}")
+            return FakeCompletedProcess(stdout="\n".join(rows))
+        return fake_run
+
+    def test_batches_instead_of_one_call_per_file(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(cli.subprocess, "run", self._fake_run_factory(calls))
+
+        files = [f"/seq/frame{i:03d}.dpx" for i in range(7)]
+        results = list(validate_files_against_policy(files, "/policy.xml", batch_size=3))
+
+        assert len(calls) == 3  # ceil(7/3), not 7
+        assert [f for f, _ in results] == files
+        assert all(is_valid for _, is_valid in results)
+
+    def test_preserves_original_order_and_detects_failure(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(cli.subprocess, "run", self._fake_run_factory(calls, fail_substring="bad"))
+
+        files = ["/seq/a.dpx", "/seq/bad.dpx", "/seq/c.dpx"]
+        results = list(validate_files_against_policy(files, "/policy.xml", batch_size=10))
+
+        assert results == [
+            ("/seq/a.dpx", True),
+            ("/seq/bad.dpx", False),
+            ("/seq/c.dpx", True),
+        ]
+
+    def test_is_lazy_about_later_batches(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(cli.subprocess, "run", self._fake_run_factory(calls))
+
+        files = [f"/seq/frame{i:03d}.dpx" for i in range(10)]
+        gen = validate_files_against_policy(files, "/policy.xml", batch_size=3)
+        next(gen)  # only consume the first result
+
+        # A caller that stops after the first result (e.g. because it was
+        # invalid and process_sequence halts) should not have triggered a
+        # mediaconch call for later batches.
+        assert len(calls) == 1
 
 
 class TestTopLevelSubcommands:
