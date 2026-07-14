@@ -29,11 +29,11 @@ project-directory/
     └── WAV_policy.xml                        # Required: WAV validation policy
 ```
 
-`srw` does not derive these paths from its own install location — each is a CLI flag (see below), so a single `srw` install can be pointed at any project directory or drive.
+`srw` does not derive these paths from its own install location — each is a CLI flag (see below), so a single `srw` install can be pointed at any project directory or drive. `srw run` processes one such directory set; `srw batch` (see [below](#batch-mode)) launches several at once.
 
 ---
 
-## CLI flags
+## CLI flags (`srw run`)
 
 | Flag | Default | Purpose |
 |------|---------|---------|
@@ -225,7 +225,72 @@ For a sequence named `sequence_name`, after successful processing:
 
 ## Parallel processing notes
 
-`srw` processes sequences sequentially within a single invocation. For parallel processing, run separate instances against separate `--source-dir`/`--docs-dir` pairs. RAWcooked's reversibility check is I/O- and CPU-intensive; test how many concurrent jobs your storage and platform can sustain before scaling up — an unstable platform may show the segfault above under load that a single job does not.
+`srw run` processes sequences sequentially within a single invocation. For parallel processing, run separate invocations against separate `--source-dir`/`--docs-dir` pairs — see [Batch mode](#batch-mode) below for a way to launch several at once from one command. RAWcooked's reversibility check is I/O- and CPU-intensive; test how many concurrent jobs your storage and platform can sustain before scaling up — low CPU/RAM usage in `htop` doesn't rule out an I/O ceiling, since RAWcooked work is typically bottlenecked on storage throughput rather than compute. Watch `iostat -x 1` or `iotop` against the actual RAID/NVMe devices while increasing concurrency, and stop once a device's `%util` saturates or errors start appearing — an unstable platform may also show the [segfault above](#rawcooked-segfault-on-some-amd-platforms-return-code--11) under load that a single job does not.
+
+---
+
+## Batch mode
+
+`srw batch` launches several `srw run` invocations in parallel from one command, for deployments where multiple DPX batches are staged at once — for example, several batch folders spread across multiple RAID volumes, each writing its own output to a separate destination drive.
+
+### Config format
+
+```toml
+# batches.toml
+[[batch]]
+batch_dir = "/mnt/raid1/batch1"
+output_dir = "/mnt/nvme_a/mkv"
+
+[[batch]]
+batch_dir = "/mnt/raid1/batch2"
+output_dir = "/mnt/nvme_a/mkv"
+
+[[batch]]
+batch_dir = "/mnt/raid1/batch3"
+output_dir = "/mnt/nvme_a/mkv"
+
+[[batch]]
+batch_dir = "/mnt/raid2/batch1"
+output_dir = "/mnt/nvme_b/mkv"
+
+[[batch]]
+batch_dir = "/mnt/raid2/batch2"
+output_dir = "/mnt/nvme_b/mkv"
+
+[[batch]]
+batch_dir = "/mnt/raid2/batch3"
+output_dir = "/mnt/nvme_b/mkv"
+```
+
+Each `[[batch]]` entry needs at minimum `batch_dir` and `output_dir`. `source_dir`/`docs_dir`/`mediaconch_dir` default to `{batch_dir}/Source`, `{batch_dir}/Documents`, `{batch_dir}/MediaConch` — override any of them individually if a deployment's layout differs:
+
+```toml
+[[batch]]
+batch_dir = "/mnt/raid1/batch1"
+source_dir = "/mnt/raid1/batch1/CustomSource"   # overrides the Source/ default
+output_dir = "/mnt/nvme_a/mkv"
+attachment_size = 8000000                        # overrides the srw run default for this batch only
+```
+
+An optional `name` sets the label used for that job's log file and console output; if omitted, it's derived from `batch_dir`'s parent and basename (e.g. `/mnt/raid1/batch1` → `raid1_batch1`) — using the basename alone would collide whenever the same `batch1`/`batch2`/`batch3` naming repeats across multiple RAID volumes, which is the expected layout here. Names must be unique across the config; a collision (e.g. two entries both resolving to the same explicit `name`) is rejected before anything launches.
+
+### Running it
+
+```bash
+srw batch --config batches.toml
+```
+
+| Flag | Default | Purpose |
+|------|---------|---------|
+| `--config` | *(required)* | Path to the TOML config |
+| `--log-dir` | `./srw-batch-logs` | Directory to receive each job's full `srw run` output, one `{name}.log` file per batch |
+| `--max-parallel` | *(all configured batches at once)* | Cap on concurrent jobs |
+
+There's no built-in default concurrency cap — every batch entry launches at once unless `--max-parallel` says otherwise. The real per-machine ceiling for parallel RAWcooked jobs is I/O-bound and platform-specific (see [Parallel processing notes](#parallel-processing-notes)); measure it empirically rather than assuming a number from CPU core count.
+
+### Output and failure handling
+
+Each job's full console output (identical to what `srw run` would print directly) is captured to `{log-dir}/{name}.log`; the orchestrator's own terminal output is just a concise per-job status line plus a final summary. If a job fails, `srw batch` reports it in the summary and exits non-zero, but does **not** stop the other jobs — each one runs to completion or failure independently. Fix the underlying issue and re-run `srw batch` with the same config: `srw run`'s own step-level resume system means already-completed steps within each job are skipped, exactly as if you'd re-run that one job by hand.
 
 ---
 

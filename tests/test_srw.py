@@ -15,7 +15,7 @@ import pytest
 import srw.cli as cli
 from srw.cli import (
     Config,
-    build_arg_parser,
+    build_run_arg_parser,
     verify_md5,
     is_step_complete,
     get_step_completion_timestamp,
@@ -94,12 +94,12 @@ class TestStepTracking:
 
 class TestArgParser:
     def test_output_dir_is_required(self):
-        parser = build_arg_parser()
+        parser = build_run_arg_parser()
         with pytest.raises(SystemExit):
             parser.parse_args([])
 
     def test_defaults(self):
-        parser = build_arg_parser()
+        parser = build_run_arg_parser()
         args = parser.parse_args(["--output-dir", "/mnt/mkv"])
         assert args.source_dir == "Source"
         assert args.docs_dir == "Documents"
@@ -120,3 +120,22 @@ class TestArgParser:
         )
         assert config.dpx_policy == "MyPolicies/DPX_SMPTE-CORE.xml"
         assert config.wav_policy == "MyPolicies/WAV_policy.xml"
+
+
+class TestTopLevelSubcommands:
+    def test_requires_a_subcommand(self):
+        parser = cli.build_arg_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args([])
+
+    def test_run_subcommand_dispatches_to_run_main(self):
+        parser = cli.build_arg_parser()
+        args = parser.parse_args(["run", "--output-dir", "/mnt/mkv"])
+        assert args.func is cli.run_main
+        assert args.output_dir == "/mnt/mkv"
+
+    def test_batch_subcommand_dispatches_to_batch_main(self):
+        parser = cli.build_arg_parser()
+        args = parser.parse_args(["batch", "--config", "batch.toml"])
+        assert args.func.__module__ == "srw.batch"
+        assert args.config == "batch.toml"

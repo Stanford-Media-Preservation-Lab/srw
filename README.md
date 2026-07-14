@@ -29,13 +29,13 @@ See [MANUAL.md](MANUAL.md) for full details on each step, the resume system, and
 ## Quick start
 
 ```bash
-srw --output-dir /media/smpl-5220r/A/MKV
+srw run --output-dir /media/smpl-5220r/A/MKV
 ```
 
-By default `srw` reads sequences from `./Source`, writes logs/CSVs/XML metadata to `./Documents`, and reads MediaConch policies from `./MediaConch`. Override any of these:
+By default `srw run` reads sequences from `./Source`, writes logs/CSVs/XML metadata to `./Documents`, and reads MediaConch policies from `./MediaConch`. Override any of these:
 
 ```bash
-srw \
+srw run \
   --source-dir /path/to/Source \
   --output-dir /media/smpl-5220r/A/MKV \
   --docs-dir /path/to/Documents \
@@ -43,7 +43,34 @@ srw \
   --attachment-size 5000000
 ```
 
-See `srw --help` for the full flag reference.
+See `srw run --help` for the full flag reference.
+
+---
+
+## Batch mode — multiple source/output pairs at once
+
+If DPX sequences are staged across several source locations at once (e.g. multiple batch folders spread across separate RAID volumes, each writing to its own destination drive), `srw batch` launches one `srw run` per batch folder in parallel from a single TOML config, instead of invoking `srw run` by hand for each one:
+
+```bash
+srw batch --config batches.toml
+```
+
+```toml
+# batches.toml
+[[batch]]
+batch_dir = "/mnt/raid1/batch1"    # expects Source/, Documents/, MediaConch/ inside
+output_dir = "/mnt/nvme_a/mkv"
+
+[[batch]]
+batch_dir = "/mnt/raid1/batch2"
+output_dir = "/mnt/nvme_a/mkv"
+
+[[batch]]
+batch_dir = "/mnt/raid2/batch1"
+output_dir = "/mnt/nvme_b/mkv"
+```
+
+There's no built-in concurrency cap — every configured batch launches at once by default, since the real per-machine ceiling is I/O-bound and worth measuring (`iostat`/`iotop` against the actual RAID/NVMe devices) rather than assuming. Throttle with `--max-parallel N` once you've established one. See [MANUAL.md](MANUAL.md#batch-mode) for the full config reference.
 
 ---
 
@@ -59,7 +86,7 @@ See [MANUAL.md](MANUAL.md) for the full workflow reference, directory layout, re
 
 ## Dependencies
 
-- Python 3.10+ (stdlib only — no third-party packages required)
+- Python 3.11+ (stdlib only — no third-party packages required)
 - `rawcooked` — lossless DPX-to-FFv1/MKV encoding with reversibility
 - `mediaconch` — policy-based validation of DPX and WAV files
 - `mkvtoolnix` (`mkvpropedit`) — MKV metadata tagging

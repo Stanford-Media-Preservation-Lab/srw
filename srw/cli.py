@@ -17,7 +17,7 @@ import sys
 import argparse
 from dataclasses import dataclass
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 DEFAULT_ATTACHMENT_SIZE = 5_000_000  # 5 MB; RAWcooked's own default is 1 MB
 
@@ -448,11 +448,8 @@ def process_sequence(source_folder_path, config: Config):
     return True
 
 
-def build_arg_parser():
-    parser = argparse.ArgumentParser(
-        prog="srw",
-        description="SMPL RAWcooked Workflow — batch DPX to FFv1/MKV preservation transcoding.",
-    )
+def add_run_arguments(parser):
+    """Attach the flags for single-directory-set processing to a parser (or subparser)."""
     parser.add_argument(
         "--source-dir", default="Source",
         help="Parent directory containing one subfolder per DPX sequence (default: ./Source)",
@@ -481,14 +478,34 @@ def build_arg_parser():
         "--attachment-size", type=int, default=DEFAULT_ATTACHMENT_SIZE,
         help=f"RAWcooked attachment size limit in bytes, passed as -s (default: {DEFAULT_ATTACHMENT_SIZE})",
     )
-    parser.add_argument("--version", action="version", version=f"srw {__version__}")
     return parser
 
 
-def main(argv=None):
-    parser = build_arg_parser()
-    args = parser.parse_args(argv)
+def build_run_arg_parser():
+    """Standalone parser for `python -m srw.cli` / direct run_main(argv) use and tests."""
+    parser = argparse.ArgumentParser(
+        prog="srw run",
+        description="Process one set of Source/Documents/MediaConch directories.",
+    )
+    return add_run_arguments(parser)
 
+
+def check_dependencies():
+    """Verify required external tools are on PATH. Exits the process if any are missing."""
+    for tool, apt_package in (
+        ("mkvpropedit", "mkvtoolnix"),
+        ("rawcooked", "rawcooked"),
+        ("mediaconch", "mediaconch"),
+    ):
+        if not shutil.which(tool):
+            print(f"FATAL ERROR: {tool} not installed. Please run: sudo apt install {apt_package}")
+            sys.exit(1)
+
+
+def run_main(args):
+    """Runs the single-directory-set workflow. `args` is a parsed argparse.Namespace
+    with the attributes defined by add_run_arguments() (source_dir, output_dir, docs_dir,
+    mediaconch_dir, dpx_policy, wav_policy, attachment_size)."""
     mc_dir = args.mediaconch_dir
     config = Config(
         source_parent=args.source_dir,
@@ -504,15 +521,7 @@ def main(argv=None):
         os.makedirs(config.docs_dir)
     if not os.path.exists(config.mkv_out_dir):
         os.makedirs(config.mkv_out_dir, exist_ok=True)
-    if not shutil.which("mkvpropedit"):
-        print("FATAL ERROR: mkvpropedit not installed. Please run: sudo apt install mkvtoolnix")
-        sys.exit(1)
-    if not shutil.which("rawcooked"):
-        print("FATAL ERROR: rawcooked not installed. Please run: sudo apt install rawcooked")
-        sys.exit(1)
-    if not shutil.which("mediaconch"):
-        print("FATAL ERROR: mediaconch not installed. Please run: sudo apt install mediaconch")
-        sys.exit(1)
+    check_dependencies()
 
     if not os.path.isdir(config.source_parent):
         print(f"FATAL ERROR: source directory not found: {config.source_parent}")
@@ -525,7 +534,7 @@ def main(argv=None):
 
     if not all_sequences:
         print(f"No folders found in {config.source_parent}")
-        return
+        return 0
 
     print("=" * 60)
     print("Stanford Media Preservation Lab - srw Workflow Active")
@@ -566,6 +575,41 @@ def main(argv=None):
         print("Already-completed steps will be automatically skipped.")
 
     print("=" * 60 + "\n")
+
+    return 1 if error_list else 0
+
+
+def build_arg_parser():
+    """Top-level parser with `run` and `batch` subcommands."""
+    parser = argparse.ArgumentParser(
+        prog="srw",
+        description="SMPL RAWcooked Workflow — batch DPX to FFv1/MKV preservation transcoding.",
+    )
+    parser.add_argument("--version", action="version", version=f"srw {__version__}")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    run_parser = subparsers.add_parser(
+        "run", help="Process one set of Source/Documents/MediaConch directories.",
+    )
+    add_run_arguments(run_parser)
+    run_parser.set_defaults(func=run_main)
+
+    # srw.batch is imported lazily inside main() so `srw run ...` doesn't need
+    # tomllib/the batch module loaded for the common case.
+    batch_parser = subparsers.add_parser(
+        "batch", help="Launch multiple `srw run` invocations in parallel from a TOML config.",
+    )
+    from srw.batch import add_batch_arguments, batch_main
+    add_batch_arguments(batch_parser)
+    batch_parser.set_defaults(func=batch_main)
+
+    return parser
+
+
+def main(argv=None):
+    parser = build_arg_parser()
+    args = parser.parse_args(argv)
+    sys.exit(args.func(args))
 
 
 if __name__ == "__main__":
