@@ -19,7 +19,7 @@ import tempfile
 import io
 from dataclasses import dataclass
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 DEFAULT_ATTACHMENT_SIZE = 5_000_000  # 5 MB; RAWcooked's own default is 1 MB
 
@@ -253,6 +253,13 @@ def process_sequence(source_folder_path, config: Config):
     mkv_path = os.path.join(config.mkv_out_dir, f"{source_folder_name}.mkv")
     mp4_out = os.path.join(config.mkv_out_dir, f"{source_folder_name}_rawcooked_review.mp4")
 
+    # Original per-file sidecar .md5s are relocated here (not deleted) after step 2
+    # verifies them -- they have to leave the source folder before step 6, since
+    # rawcooked --all would otherwise try to embed each one as its own MKV
+    # attachment, but they're kept as a permanent baseline for re-verifying the
+    # original transfer later if ever needed.
+    sidecar_holding_dir = os.path.join(config.docs_dir, f"{source_folder_name}_source_md5_sidecars")
+
     # .md5 manifest goes into the source folder, named after the MKV output,
     # so RAWcooked --all will embed it natively during the encode
     long_md5_path = os.path.join(source_folder_path, f"{source_folder_name}.md5")
@@ -304,22 +311,31 @@ def process_sequence(source_folder_path, config: Config):
     else:
         write_banner("2. CHECKSUM VERIFICATION")
         try:
-            md5_files_to_delete = []
+            moved_count = 0
             for root, dirs, files in os.walk(source_folder_path):
                 for file in sorted(files):
                     if not file.endswith('.md5') and not file.startswith('.'):
                         f_path = os.path.join(root, file)
                         m_path = f_path + ".md5"
+                        rel_md5_path = os.path.relpath(m_path, source_folder_path)
+                        holding_path = os.path.join(sidecar_holding_dir, rel_md5_path)
+
+                        if os.path.exists(holding_path) and not os.path.exists(m_path):
+                            # Already verified and relocated in a prior attempt that
+                            # was interrupted partway through this step -- don't
+                            # re-verify or report it missing.
+                            continue
                         if not os.path.exists(m_path):
                             write_log(f"CRITICAL ERROR: Missing MD5 for {file}")
                             return "Missing MD5"
                         if not verify_md5(f_path, m_path):
                             return "Checksum Mismatch"
-                        md5_files_to_delete.append(m_path)
+                        os.makedirs(os.path.dirname(holding_path), exist_ok=True)
+                        shutil.move(m_path, holding_path)
+                        moved_count += 1
             write_log("-" * 30)
-            write_log("Deleting sidecar .md5 files...")
-            for m_file in md5_files_to_delete:
-                os.remove(m_file)
+            write_log(f"Relocated {moved_count} sidecar .md5 file(s) to: {sidecar_holding_dir}")
+            write_log("(kept as a permanent baseline for re-verifying the original transfer -- not deleted)")
             mark_step_complete(2)
             step_log.append((2, "CHECKSUM VERIFICATION", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
         except Exception as e:
