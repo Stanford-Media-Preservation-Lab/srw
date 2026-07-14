@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "srw"
+version = "1.0.0"
+description = "SMPL RAWcooked Workflow for batch DPX to FFv1/MKV preservation transcoding"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "Stanford Media Preservation Lab" }
+]
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+srw = "srw.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["srw*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
