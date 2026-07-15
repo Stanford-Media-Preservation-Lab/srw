@@ -274,6 +274,44 @@ class TestTopLevelSubcommands:
 
 
 # ---------------------------------------------------------------------------
+# --help epilogs (full workflow reference, config format, docs pointers)
+# ---------------------------------------------------------------------------
+
+class TestHelpEpilogs:
+    def test_top_level_epilog_mentions_docs_and_subcommands(self):
+        parser = cli.build_arg_parser()
+        assert parser.epilog is not None
+        assert "MANUAL.md" in parser.epilog
+        assert "srw run --help" in parser.epilog
+        assert "srw batch --help" in parser.epilog
+
+    def test_run_epilog_lists_all_steps(self):
+        parser = cli.build_run_arg_parser()
+        assert parser.epilog is not None
+        assert "Pre-flight Check" in parser.epilog
+        assert "Inventory Generation" in parser.epilog
+        assert "MediaInfo Technical Metadata" in parser.epilog
+        assert "Final Deliverable Hashes" in parser.epilog
+        assert "--start-step 3 --end-step 4" in parser.epilog
+
+    def test_run_subparser_via_top_level_also_gets_epilog(self):
+        # add_run_arguments() is called both by build_run_arg_parser() (standalone)
+        # and by build_arg_parser()'s "run" subparser -- confirm both paths set it.
+        parser = cli.build_arg_parser()
+        run_subparser = parser._subparsers._group_actions[0].choices["run"]
+        assert run_subparser.epilog is not None
+        assert "MediaInfo Technical Metadata" in run_subparser.epilog
+
+    def test_batch_epilog_documents_config_format(self):
+        parser = cli.build_arg_parser()
+        batch_subparser = parser._subparsers._group_actions[0].choices["batch"]
+        assert batch_subparser.epilog is not None
+        assert "[[batch]]" in batch_subparser.epilog
+        assert "batch_dir" in batch_subparser.epilog
+        assert "max-parallel" in batch_subparser.epilog
+
+
+# ---------------------------------------------------------------------------
 # format_total_size (inventory summary line, MB -> GB switch)
 # ---------------------------------------------------------------------------
 

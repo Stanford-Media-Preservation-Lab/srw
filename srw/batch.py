@@ -15,6 +15,7 @@ throttle down once real testing (iostat/iotop against the RAID and NVMe
 devices, not just htop) has established one.
 """
 
+import argparse
 import os
 import sys
 import subprocess
@@ -134,7 +135,38 @@ def _run_job(job: BatchJob, log_dir: str):
     return job, process.returncode, elapsed, log_path
 
 
+BATCH_EPILOG = """\
+Config format (TOML):
+
+  [[batch]]
+  batch_dir = "/mnt/raid1/batch1"    # expects Source/, Documents/, MediaConch/ inside
+  output_dir = "/mnt/nvme_a/mkv"
+
+  [[batch]]
+  batch_dir = "/mnt/raid1/batch2"
+  output_dir = "/mnt/nvme_a/mkv"
+
+Each [[batch]] entry needs at minimum batch_dir and output_dir. source_dir /
+docs_dir / mediaconch_dir default to {batch_dir}/Source, /Documents,
+/MediaConch -- override individually if a deployment's layout differs.
+Optional per-entry overrides: name, attachment_size, start_step, end_step,
+skip_preflight, disk_space_margin.
+
+No concurrency cap by default -- every configured batch launches at once
+unless --max-parallel limits it. The real per-machine ceiling for parallel
+RAWcooked jobs is I/O-bound; measure with iostat/iotop against your actual
+RAID/NVMe devices rather than assuming a number from CPU core count.
+
+Example:
+  srw batch --config batches.toml --max-parallel 3
+
+Full reference: MANUAL.md#batch-mode in https://github.com/michaelangeletti/srw
+"""
+
+
 def add_batch_arguments(parser):
+    parser.epilog = BATCH_EPILOG
+    parser.formatter_class = argparse.RawDescriptionHelpFormatter
     parser.add_argument(
         "--config", required=True,
         help="Path to a TOML file with one or more [[batch]] entries (see MANUAL.md)",

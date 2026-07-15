@@ -21,7 +21,7 @@ import io
 from dataclasses import dataclass
 from typing import Optional
 
-__version__ = "1.4.0"
+__version__ = "1.4.1"
 
 DEFAULT_ATTACHMENT_SIZE = 5_000_000  # 5 MB; RAWcooked's own default is 1 MB
 
@@ -83,6 +83,72 @@ STEP_DEPENDENCIES = {
     8: ("ffmpeg", "ffmpeg"),
     9: ("mediainfo", "mediainfo"),
 }
+
+# Title-case name + one-line description for each step, used only to build
+# `srw run --help`'s epilog -- kept separate from STEP_NAMES (the all-caps
+# banner text written into process logs, which must stay stable for the
+# resume system) so reformatting this table can never affect log output.
+_STEP_HELP_ROWS = [
+    ("0", "Pre-flight Check", "audio Y/N, DPX frame-gap scan, sidecar coverage (warn only);"),
+    ("", "", "halts on missing metadata XML, MediaConch policy, or disk space"),
+    ("1", "Inventory Generation", "{docs-dir}/{sequence}_inventory.csv"),
+    ("2", "Checksum Verification", "verifies sidecar .md5s, relocates them out of the source folder"),
+    ("3", "MediaConch DPX Validation", "validates every .dpx against your DPX policy"),
+    ("4", "MediaConch WAV Validation", "validates any .wav against your WAV policy (skipped if none)"),
+    ("5", "Manifest Generation", "{source}/{sequence}/{sequence}.md5 (embedded into the MKV)"),
+    ("6", "RAWcooked Transcode", "{output-dir}/{sequence}.mkv + .log"),
+    ("7", "Embed Metadata Tags", "tags MKV from {docs-dir}/{sequence}.xml via mkvpropedit"),
+    ("8", "Generate Review Derivative", "{output-dir}/{sequence}_rawcooked_review.mp4"),
+    ("9", "MediaInfo Technical Metadata", "{docs-dir}/{sequence}_mediainfo.txt (mediainfo -f -i)"),
+    ("10", "Final Deliverable Hashes", ".mkv.md5 and .log.md5"),
+]
+
+
+def _format_step_table():
+    return "\n".join(
+        f"  {num:>2}  {name:<30} {detail}" if name else f"  {num:>2}  {'':<30} {detail}"
+        for num, name, detail in _STEP_HELP_ROWS
+    )
+
+
+RUN_EPILOG = f"""\
+Workflow (Step 0 pre-flight check, then Steps 1-10; every step writes a
+resumable success marker to the process log, so a failed or interrupted
+run can simply be re-run):
+
+{_format_step_table()}
+
+Examples:
+  srw run --output-dir /media/smpl-5220r/A/MKV
+  srw run --output-dir /media/smpl-5220r/A/MKV --start-step 3 --end-step 4
+  srw run --output-dir /media/smpl-5220r/A/MKV --disk-space-margin 0.6
+
+Required external tools: rawcooked, mediaconch, mkvtoolnix (mkvpropedit),
+ffmpeg, mediainfo -- see INSTALL_UBUNTU.md. Only the tools needed by the
+steps within --start-step/--end-step are checked.
+
+Full reference: MANUAL.md in https://github.com/michaelangeletti/srw
+"""
+
+TOP_LEVEL_EPILOG = """\
+Takes folders of DPX image sequences (with optional WAV audio) from film
+scanning and packages them into lossless FFv1/Matroska (MKV) files for
+long-term preservation in an OAIS digital repository, with MD5 verification,
+MediaConch policy validation, embedded metadata tagging, an H.264 review
+derivative, and a MediaInfo technical metadata dump -- all tracked through a
+resumable, timestamped per-sequence log. Runs on Ubuntu 24.04.
+
+Commands:
+  run     Process one set of Source/Documents/MediaConch directories.
+          See `srw run --help` for the full ten-step workflow reference.
+  batch   Launch multiple `srw run` invocations in parallel from a TOML config.
+          See `srw batch --help` for the config format.
+
+Documentation: https://github.com/michaelangeletti/srw
+  README.md          -- quick start and workflow overview
+  MANUAL.md          -- full step-by-step reference, resume system, design decisions
+  INSTALL_UBUNTU.md  -- dependency and pipx install instructions
+"""
 
 
 @dataclass
@@ -865,6 +931,8 @@ def process_sequence(source_folder_path, config: Config):
 
 def add_run_arguments(parser):
     """Attach the flags for single-directory-set processing to a parser (or subparser)."""
+    parser.epilog = RUN_EPILOG
+    parser.formatter_class = argparse.RawDescriptionHelpFormatter
     parser.add_argument(
         "--source-dir", default="Source",
         help="Parent directory containing one subfolder per DPX sequence (default: ./Source)",
@@ -1065,6 +1133,8 @@ def build_arg_parser():
     parser = argparse.ArgumentParser(
         prog="srw",
         description="SMPL RAWcooked Workflow — batch DPX to FFv1/MKV preservation transcoding.",
+        epilog=TOP_LEVEL_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--version", action="version", version=f"srw {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)

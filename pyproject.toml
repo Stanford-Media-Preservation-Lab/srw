@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "srw"
-version = "1.4.0"
+version = "1.4.1"
 description = "SMPL RAWcooked Workflow for batch DPX to FFv1/MKV preservation transcoding"
 readme = "README.md"
 license = { text = "MIT" }
