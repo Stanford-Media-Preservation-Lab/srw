@@ -33,6 +33,10 @@ class BatchJob:
     mediaconch_dir: str
     output_dir: str
     attachment_size: Optional[int] = None
+    start_step: Optional[int] = None
+    end_step: Optional[int] = None
+    skip_preflight: bool = False
+    disk_space_margin: Optional[float] = None
 
 
 def _default_job_name(batch_dir, index):
@@ -83,6 +87,10 @@ def load_batch_config(config_path):
             mediaconch_dir=mediaconch_dir,
             output_dir=entry["output_dir"],
             attachment_size=entry.get("attachment_size"),
+            start_step=entry.get("start_step"),
+            end_step=entry.get("end_step"),
+            skip_preflight=entry.get("skip_preflight", False),
+            disk_space_margin=entry.get("disk_space_margin"),
         ))
 
     names = [job.name for job in jobs]
@@ -103,6 +111,14 @@ def _job_command(job: BatchJob):
     ]
     if job.attachment_size is not None:
         cmd += ["--attachment-size", str(job.attachment_size)]
+    if job.start_step is not None:
+        cmd += ["--start-step", str(job.start_step)]
+    if job.end_step is not None:
+        cmd += ["--end-step", str(job.end_step)]
+    if job.skip_preflight:
+        cmd += ["--skip-preflight"]
+    if job.disk_space_margin is not None:
+        cmd += ["--disk-space-margin", str(job.disk_space_margin)]
     return cmd
 
 

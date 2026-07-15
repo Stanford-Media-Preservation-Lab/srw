@@ -2,27 +2,29 @@
 
 **SMPL RAWcooked Workflow** — Stanford Media Preservation Lab
 
-`srw` is a batch preservation transcoding tool for digitized motion picture film scans. It takes folders of DPX image sequences (with optional WAV audio) and packages them into lossless FFv1/Matroska (MKV) files for long-term preservation in an OAIS digital repository, with MD5 verification, MediaConch policy validation, embedded metadata tagging, and an H.264 review derivative — all tracked through a resumable, timestamped per-sequence log. Runs on Ubuntu 24.04.
+`srw` is a batch preservation transcoding tool for digitized motion picture film scans. It takes folders of DPX image sequences (with optional WAV audio) and packages them into lossless FFv1/Matroska (MKV) files for long-term preservation in an OAIS digital repository, with MD5 verification, MediaConch policy validation, embedded metadata tagging, an H.264 review derivative, and a MediaInfo technical metadata dump — all tracked through a resumable, timestamped per-sequence log. Runs on Ubuntu 24.04.
 
 ---
 
-## Nine-step workflow
+## Ten-step workflow
 
-Each sequence folder under `--source-dir` is run through nine steps. Every step writes a `SUCCESS` marker to its process log; if the tool is interrupted or a step fails, re-running `srw` skips everything already completed and resumes from the failure point.
+Each sequence folder under `--source-dir` is run through a Step 0 pre-flight check followed by ten numbered steps. Every step writes a `SUCCESS` marker to its process log; if the tool is interrupted or a step fails, re-running `srw` skips everything already completed and resumes from the failure point. `--start-step`/`--end-step` can also run a specific step range on demand — see below.
 
 | Step | Name | Output |
 |------|------|--------|
+| 0 | Pre-flight Check | Audio Y/N, DPX frame-gap scan, sidecar `.md5` coverage (report only); halts on missing metadata XML, missing MediaConch policy, or insufficient disk space on `--output-dir` |
 | 1 | Inventory Generation | `{docs-dir}/{sequence}_inventory.csv` |
-| 2 | Checksum Verification | Verifies + deletes sidecar `.md5` files |
+| 2 | Checksum Verification | Verifies sidecar `.md5` files, relocates them out of the source folder |
 | 3 | MediaConch DPX Validation | Validates every `.dpx` against your DPX policy |
 | 4 | MediaConch WAV Validation | Validates any `.wav` against your WAV policy (skipped if picture-only) |
 | 5 | Manifest Generation | `{source}/{sequence}/{sequence}.md5` (embedded into the MKV by RAWcooked) |
 | 6 | RAWcooked Transcode | `{output-dir}/{sequence}.mkv` + `.log` |
 | 7 | Embed Metadata Tags | Tags MKV from `{docs-dir}/{sequence}.xml` via `mkvpropedit` |
 | 8 | Generate Review Derivative | `{output-dir}/{sequence}_rawcooked_review.mp4` |
-| 9 | Final Deliverable Hashes | `.mkv.md5` and `.log.md5` |
+| 9 | MediaInfo Technical Metadata | `{docs-dir}/{sequence}_mediainfo.txt` (`mediainfo -f -i`, for QC/database use) |
+| 10 | Final Deliverable Hashes | `.mkv.md5` and `.log.md5` |
 
-See [MANUAL.md](MANUAL.md) for full details on each step, the resume system, and key design decisions.
+See [MANUAL.md](MANUAL.md) for full details on each step, the resume system, `--start-step`/`--end-step`, and key design decisions.
 
 ---
 
@@ -91,10 +93,13 @@ See [MANUAL.md](MANUAL.md) for the full workflow reference, directory layout, re
 - `mediaconch` — policy-based validation of DPX and WAV files
 - `mkvtoolnix` (`mkvpropedit`) — MKV metadata tagging
 - `ffmpeg` — H.264 review derivative generation
+- `mediainfo` — technical metadata dump for QC/database use
 
 ```bash
-sudo apt install rawcooked mediaconch mkvtoolnix ffmpeg
+sudo apt install rawcooked mediaconch mkvtoolnix ffmpeg mediainfo
 ```
+
+Only the tools needed by the steps in your `--start-step`/`--end-step` range are checked — e.g. `--start-step 3 --end-step 4` (MediaConch validation only) doesn't require `rawcooked` or `mediainfo` to be installed.
 
 ## Required inputs per sequence
 
