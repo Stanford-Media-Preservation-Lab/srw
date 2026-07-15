@@ -1,6 +1,6 @@
 # Installation — Ubuntu 24.04 LTS
 
-`srw` targets Ubuntu 24.04. Its dependencies (`rawcooked`, `mediaconch`, `mkvtoolnix`) are Linux tools without a supported macOS path, so this is currently the only supported platform.
+`srw` targets Ubuntu 24.04. Its dependencies (`rawcooked`, `mediaconch`, `mkvtoolnix`, `mediainfo`) are Linux tools without a supported macOS path, so this is currently the only supported platform.
 
 ---
 
@@ -12,7 +12,7 @@ sudo apt update && sudo apt upgrade -y
 
 ---
 
-## 2. Install RAWcooked, MediaConch, mkvtoolnix, and FFmpeg
+## 2. Install RAWcooked, MediaConch, mkvtoolnix, FFmpeg, and MediaInfo
 
 Ubuntu's default repos carry older versions. Install the current releases from the MediaArea repository:
 
@@ -20,7 +20,7 @@ Ubuntu's default repos carry older versions. Install the current releases from t
 wget https://mediaarea.net/repo/deb/repo-mediaarea_1.0-27_all.deb
 sudo dpkg -i repo-mediaarea_1.0-27_all.deb
 sudo apt update
-sudo apt install -y rawcooked mediaconch mkvtoolnix ffmpeg
+sudo apt install -y rawcooked mediaconch mkvtoolnix ffmpeg mediainfo
 ```
 
 > If the `.deb` filename above 404s, MediaArea has published a newer repo package — check [mediaarea.net/en/Repos](https://mediaarea.net/en/Repos) for the current version number and substitute it above.
@@ -32,11 +32,12 @@ rawcooked --version
 mediaconch --version
 mkvpropedit --version
 ffmpeg -version
+mediainfo --version
 ```
 
 ---
 
-## 3. Install Python 3.10+
+## 3. Install Python 3.11+
 
 Ubuntu 24.04 ships with Python 3.12. Verify:
 
@@ -44,36 +45,40 @@ Ubuntu 24.04 ships with Python 3.12. Verify:
 python3 --version
 ```
 
-Install pip if not present:
+---
+
+## 4. Install pipx (if not already present)
 
 ```bash
-sudo apt install -y python3-pip
+sudo apt install -y pipx
+pipx ensurepath
 ```
+
+Open a new shell (or `source ~/.bashrc`) afterward so pipx's bin directory is on `PATH`.
 
 ---
 
-## 4. Clone the repository
+## 5. Install srw
+
+```bash
+pipx install git+https://github.com/michaelangeletti/srw.git
+```
+
+pipx installs the console script into an isolated environment, matching this lab's other tools (`vdg`, `cta`, `srd`). Note that pushing a commit to the repo does **not** automatically update an already-installed copy — after any update, run:
+
+```bash
+pipx reinstall srw
+```
+
+### Development install (contributing to srw itself)
+
+If you're working on `srw`'s own code rather than just running it, install from a local clone in editable mode instead:
 
 ```bash
 git clone https://github.com/michaelangeletti/srw.git
 cd srw
-```
-
----
-
-## 5. Install the package
-
-```bash
 pip3 install -e .
 ```
-
-If your user `bin` directory is not in `PATH`:
-
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-Add to `~/.bashrc` to make permanent.
 
 ---
 
