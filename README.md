@@ -1,6 +1,6 @@
 # srw
 
-**SMPL RAWcooked Workflow** — Stanford Media Preservation Lab
+**SMPL RAWcooked Workflow**
 
 `srw` is a batch preservation transcoding tool for digitized motion picture film scans. It takes folders of DPX image sequences (with optional WAV audio) and packages them into lossless FFv1/Matroska (MKV) files for long-term preservation in an OAIS digital repository, with MD5 verification, MediaConch policy validation, embedded metadata tagging, an H.264 review derivative, and a MediaInfo technical metadata dump — all tracked through a resumable, timestamped per-sequence log. Runs on Ubuntu 24.04.
 
