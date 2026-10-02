@@ -160,7 +160,7 @@ RAID/NVMe devices rather than assuming a number from CPU core count.
 Example:
   srw batch --config batches.toml --max-parallel 3
 
-Full reference: MANUAL.md#batch-mode in https://github.com/michaelangeletti/srw
+Full reference: MANUAL.md#batch-mode in https://github.com/Stanford-Media-Preservation-Lab/srw
 """
 
 

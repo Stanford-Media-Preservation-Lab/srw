@@ -161,7 +161,7 @@ Required external tools: rawcooked, mediaconch, mkvtoolnix (mkvpropedit),
 ffmpeg, mediainfo -- see INSTALL_UBUNTU.md. Only the tools needed by the
 steps within --start-step/--end-step are checked.
 
-Full reference: MANUAL.md in https://github.com/michaelangeletti/srw
+Full reference: MANUAL.md in https://github.com/Stanford-Media-Preservation-Lab/srw
 """
 
 TOP_LEVEL_EPILOG = f"""\
@@ -180,7 +180,7 @@ Commands:
   batch   Launch multiple `srw run` invocations in parallel from a TOML config.
           See `srw batch --help` for the config format.
 
-Documentation: https://github.com/michaelangeletti/srw
+Documentation: https://github.com/Stanford-Media-Preservation-Lab/srw
   README.md          -- quick start and workflow overview
   MANUAL.md          -- full step-by-step reference, resume system, design decisions
   INSTALL_UBUNTU.md  -- dependency and pipx install instructions

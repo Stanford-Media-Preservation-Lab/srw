@@ -63,7 +63,7 @@ Open a new shell (or `source ~/.bashrc`) afterward so pipx's bin directory is on
 ## 5. Install srw
 
 ```bash
-pipx install git+https://github.com/michaelangeletti/srw.git
+pipx install git+https://github.com/Stanford-Media-Preservation-Lab/srw.git
 ```
 
 pipx installs the console script into an isolated environment, matching this lab's other tools (`vdg`, `cta`, `srd`). Note that pushing a commit to the repo does **not** automatically update an already-installed copy — after any update, run:
@@ -72,12 +72,14 @@ pipx installs the console script into an isolated environment, matching this lab
 pipx reinstall srw
 ```
 
+> **Installed before the repo moved to the Stanford-Media-Preservation-Lab organization?** pipx remembers the original (`michaelangeletti/srw`) URL. GitHub redirects it, so `pipx reinstall srw` still works, but to point an existing install at the new location run `pipx uninstall srw` and then the `pipx install` command above.
+
 ### Development install (contributing to srw itself)
 
 If you're working on `srw`'s own code rather than just running it, install from a local clone in editable mode instead:
 
 ```bash
-git clone https://github.com/michaelangeletti/srw.git
+git clone https://github.com/Stanford-Media-Preservation-Lab/srw.git
 cd srw
 pip3 install -e .
 ```
