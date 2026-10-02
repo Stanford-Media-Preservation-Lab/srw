@@ -1,6 +1,6 @@
 # srw
 
-**SMPL RAWcooked Workflow**
+**SMPL RAWcooked Workflow** — v1.5.0 · October 2026
 
 `srw` is a batch preservation transcoding tool for digitized motion picture film scans. It takes folders of DPX image sequences (with optional WAV audio) and packages them into lossless FFv1/Matroska (MKV) files for long-term preservation in an OAIS digital repository, with MD5 verification, MediaConch policy validation, embedded metadata tagging, an H.264 review derivative, and a MediaInfo technical metadata dump — all tracked through a resumable, timestamped per-sequence log. Runs on Ubuntu 24.04.
 
@@ -25,6 +25,12 @@ Each sequence folder under `--source-dir` is run through a Step 0 pre-flight che
 | 10 | Final Deliverable Hashes | `.mkv.md5` and `.log.md5` |
 
 See [MANUAL.md](MANUAL.md) for full details on each step, the resume system, `--start-step`/`--end-step`, and key design decisions.
+
+---
+
+## Skipping steps (`SKIP_STEPS`)
+
+Skipping a step is not a normal operation, so there is intentionally **no CLI flag** for it. To bypass specific steps for a run, edit the `SKIP_STEPS` list near the top of `srw/cli.py` (e.g. `SKIP_STEPS = [3]`). Each skipped step writes a `>>> SKIPPED BY USER: Step N` marker to the process log (and a yellow box on the terminal), and the resume system will not retry it unless you remove the number and delete or rename the process log. Skipping Step 2 leaves sidecar `.md5` files in the source folder (which breaks Step 6), and skipping Step 5 leaves the MKV without its conformance manifest — see [MANUAL.md](MANUAL.md#skipping-steps-skip_steps) before using it. Revert `SKIP_STEPS` to `[]` afterward.
 
 ---
 

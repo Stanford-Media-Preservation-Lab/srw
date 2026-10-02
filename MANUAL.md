@@ -2,6 +2,8 @@
 
 **SMPL RAWcooked Workflow** — Stanford Media Preservation Lab
 
+Version 1.5.0 · October 2026
+
 ---
 
 ## Overview
@@ -112,6 +114,31 @@ Only the external tools actually used within the given range are required to be 
 
 ---
 
+## Skipping steps (`SKIP_STEPS`)
+
+Skipping a workflow step is **not a normal operation**, and `srw` is deliberately built so it doesn't become one. There is no CLI flag for it: skipping requires editing the `SKIP_STEPS` list near the top of `srw/cli.py`, so it can't happen through a typo, shell history, or a copied command.
+
+```python
+SKIP_STEPS: list = []      # normal operation
+SKIP_STEPS = [3]           # e.g. skip Step 3 (vendor scan fails the "Project value present" DPX check)
+```
+
+When a listed step is reached, `srw`:
+
+- prints a yellow `STEP N. <name> - SKIPPED BY USER` box on the terminal (colour is terminal-only, never written to the log)
+- writes a plain-text `>>> SKIPPED BY USER: Step N` marker, with timestamp, to the process log
+- treats that marker like a completion marker on later runs: a resumed run will **not** re-attempt the step, and the process summary shows the original skip timestamp
+
+To run a skipped step later, remove its number from `SKIP_STEPS` **and** delete or rename that sequence's process log (the marker is what prevents the retry). Set `SKIP_STEPS` back to `[]` when you're done so the next run isn't affected.
+
+> **Warning — Step 2:** skipping it leaves each source file's sidecar `.md5` in the source folder. `rawcooked --all` (Step 6) will try to embed each one as its own MKV attachment, breaking the encode. Make sure the source folder is free of stray `.md5` files before Step 6. (`--start-step` has the same caveat.)
+>
+> **Warning — Step 5:** the `.md5` manifest written by Step 5 is what RAWcooked embeds in the MKV. Skipping it means the MKV has no conformance manifest attached.
+
+`SKIP_STEPS` is separate from `--start-step`/`--end-step` ([above](#running-a-specific-step-range-start-step--end-step)), which select a contiguous range; `SKIP_STEPS` can omit individual steps anywhere in the workflow.
+
+---
+
 ## Ten-step workflow
 
 ### Step 1: Inventory Generation
@@ -194,6 +221,8 @@ Each sequence produces a detailed timestamped log at `{docs-dir}/{sequence_name}
 - A process summary block is written between steps 9 and 10, showing each step's name with its **original** completion timestamp (not the current time)
 - On resumed runs, skipped steps pull their original timestamps from the log
 - If the tool is re-run after a failure, a `SCRIPT RESUMED` header is appended
+- A step bypassed via [`SKIP_STEPS`](#skipping-steps-skip_steps) writes a `>>> SKIPPED BY USER: Step N` marker instead, which the resume system also honors
+- The log's header banner records the `srw` version and release date (v1.5.0, October 2026)
 
 ### Example process summary block
 
@@ -224,7 +253,7 @@ Each sequence produces a detailed timestamped log at `{docs-dir}/{sequence_name}
 
 1. Re-run `srw` with the same flags
 2. It reads the process log for `>>> SUCCESS: Step N` markers
-3. Completed steps are skipped; processing resumes from the failure point
+3. Completed steps (and steps marked `>>> SKIPPED BY USER` via [`SKIP_STEPS`](#skipping-steps-skip_steps)) are skipped; processing resumes from the failure point
 
 Batch processing itself is sequential: `srw` halts at the first sequence that errors rather than continuing on to the next one, so a single bad sequence doesn't leave later ones silently unprocessed. Re-running after fixing the issue picks up where it left off.
 

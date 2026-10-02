@@ -1,7 +1,7 @@
 """
 srw.cli — core logic for the SMPL RAWcooked Workflow tool.
 
-Stanford Media Preservation Lab
+Stanford Media Preservation Lab -- v1.5.0, October 2026
 DPX --> FFv1/MKV batch preservation transcoding, with MD5 verification,
 MediaConch policy validation, and a resumable ten-step per-sequence log.
 """
@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 __version__ = "1.5.0"
+__release_date__ = "October 2026"
 
 DEFAULT_ATTACHMENT_SIZE = 5_000_000  # 5 MB; RAWcooked's own default is 1 MB
 
@@ -66,6 +67,11 @@ TOTAL_STEPS = 10
 # The resume system recognises the marker: re-running the script will not
 # re-attempt a skipped step unless you remove its number from this list and
 # delete (or rename) the process log.
+#
+# DELIBERATELY NOT A CLI FLAG: skipping steps is not a normal operation and
+# is not meant to become one. Requiring an edit to this script guards against
+# skipping a step by accident (a typo, shell history, a copied command).
+# (Use --start-step/--end-step for ranges when a process log is unavailable.)
 #
 # Use deliberately. Common cases:
 #   [3]  — vendor scan fails the "Project value present" DPX check
@@ -158,7 +164,9 @@ steps within --start-step/--end-step are checked.
 Full reference: MANUAL.md in https://github.com/michaelangeletti/srw
 """
 
-TOP_LEVEL_EPILOG = """\
+TOP_LEVEL_EPILOG = f"""\
+srw v{__version__}, {__release_date__} -- Stanford Media Preservation Lab
+
 Takes folders of DPX image sequences (with optional WAV audio) from film
 scanning and packages them into lossless FFv1/Matroska (MKV) files for
 long-term preservation in an OAIS digital repository, with MD5 verification,
@@ -305,7 +313,7 @@ def init_log_header():
         header = (
             "============================================================\n"
             "Stanford Media Preservation Lab\n"
-            f"srw — SMPL RAWcooked Workflow, v{__version__} (Resumable)\n"
+            f"srw — SMPL RAWcooked Workflow, v{__version__}, {__release_date__} (Resumable)\n"
             "DPX --> FFv1/mkv\n"
             "============================================================\n\n"
         )
@@ -1236,7 +1244,7 @@ def run_main(args):
         return 0
 
     print("=" * 60)
-    print("Stanford Media Preservation Lab - srw Workflow Active")
+    print(f"Stanford Media Preservation Lab - srw v{__version__} ({__release_date__}) Workflow Active")
     print("Resumable Mode: Any failed step can be resumed")
     print("=" * 60)
 

@@ -1,5 +1,7 @@
 # Installation — Ubuntu 24.04 LTS
 
+`srw` v1.5.0 · October 2026
+
 `srw` targets Ubuntu 24.04. Its dependencies (`rawcooked`, `mediaconch`, `mkvtoolnix`, `mediainfo`) are Linux tools without a supported macOS path, so this is currently the only supported platform.
 
 ---
