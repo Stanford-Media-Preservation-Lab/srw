@@ -62,15 +62,18 @@ TOTAL_STEPS = 10
 # ---------------------------------------------------------------------------
 # SKIP_STEPS — steps to bypass for this run.
 #
-# Add step numbers here to skip specific steps and write a permanent
-# "SKIPPED BY USER" marker to the process log instead of running them.
+# Step numbers to skip, writing a permanent "SKIPPED BY USER" marker to the
+# process log instead of running them. LEAVE THIS EMPTY HERE: it is set per batch
+# folder from the SKIP_STEPS list at the top of that folder's run_srw.py launcher
+# (template: templates/run_srw.py), which assigns srw.cli.SKIP_STEPS before
+# running. That way a skip only applies to runs started from that one folder.
 # The resume system recognises the marker: re-running the script will not
 # re-attempt a skipped step unless you remove its number from this list and
 # delete (or rename) the process log.
 #
 # DELIBERATELY NOT A CLI FLAG: skipping steps is not a normal operation and
-# is not meant to become one. Requiring an edit to this script guards against
-# skipping a step by accident (a typo, shell history, a copied command).
+# is not meant to become one. Requiring an edit to a launcher file guards
+# against skipping by accident (a typo, shell history, a copied command).
 # (Use --start-step/--end-step for ranges when a process log is unavailable.)
 #
 # Use deliberately. Common cases:
@@ -183,7 +186,7 @@ Commands:
 Documentation: https://github.com/Stanford-Media-Preservation-Lab/srw
   README.md          -- quick start and workflow overview
   MANUAL.md          -- full step-by-step reference, resume system, design decisions
-  INSTALL_UBUNTU.md  -- dependency and pipx install instructions
+  INSTALL_UBUNTU.md  -- dependencies and setup (run from a clone, no install)
 """
 
 
@@ -1193,6 +1196,19 @@ def check_dependencies(start_step=1, end_step=TOTAL_STEPS):
             sys.exit(1)
 
 
+def format_skip_steps_warning(skip_steps):
+    """Pure helper: the multi-line warning shown at startup when SKIP_STEPS is
+    non-empty, or "" when nothing is being skipped."""
+    if not skip_steps:
+        return ""
+    lines = ["!" * 60, f"WARNING: SKIP_STEPS is active -- these steps will NOT run:"]
+    for n in sorted(skip_steps):
+        lines.append(f"  Step {n}: {STEP_NAMES.get(n, '?')}")
+    lines.append("Set SKIP_STEPS back to [] in run_srw.py when you are done.")
+    lines.append("!" * 60)
+    return "\n".join(lines)
+
+
 def run_main(args):
     """Runs the single-directory-set workflow. `args` is a parsed argparse.Namespace
     with the attributes defined by add_run_arguments() (source_dir, output_dir, docs_dir,
@@ -1247,6 +1263,9 @@ def run_main(args):
     print(f"Stanford Media Preservation Lab - srw v{__version__} ({__release_date__}) Workflow Active")
     print("Resumable Mode: Any failed step can be resumed")
     print("=" * 60)
+    skip_warning = format_skip_steps_warning(SKIP_STEPS)
+    if skip_warning:
+        print(f"{_ANSI_YELLOW}{skip_warning}{_ANSI_RESET}")
 
     success_list, error_list = [], []
 

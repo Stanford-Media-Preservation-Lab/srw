@@ -49,61 +49,51 @@ python3 --version
 
 ---
 
-## 4. Install pipx (if not already present)
+## 4. Get srw (no installation)
+
+`srw` is **not** installed as a package. It runs straight from a clone of the repo, so every workstation's copy stays visible and independent of any Python environment. Clone it once per workstation, somewhere outside your batch folders:
 
 ```bash
-sudo apt install -y pipx
-pipx ensurepath
-```
-
-Open a new shell (or `source ~/.bashrc`) afterward so pipx's bin directory is on `PATH`.
-
----
-
-## 5. Install srw
-
-```bash
-pipx install git+https://github.com/Stanford-Media-Preservation-Lab/srw.git
-```
-
-pipx installs the console script into an isolated environment, matching this lab's other tools (`vdg`, `cta`, `srd`). Note that pushing a commit to the repo does **not** automatically update an already-installed copy — after any update, run:
-
-```bash
-pipx reinstall srw
-```
-
-> **Installed before the repo moved to the Stanford-Media-Preservation-Lab organization?** pipx remembers the original (`michaelangeletti/srw`) URL. GitHub redirects it, so `pipx reinstall srw` still works, but to point an existing install at the new location run `pipx uninstall srw` and then the `pipx install` command above.
-
-### Development install (contributing to srw itself)
-
-If you're working on `srw`'s own code rather than just running it, install from a local clone in editable mode instead:
-
-```bash
+cd ~
 git clone https://github.com/Stanford-Media-Preservation-Lab/srw.git
-cd srw
-pip3 install -e .
+```
+
+To update a workstation later:
+
+```bash
+git -C ~/srw pull
+```
+
+> **Migrating from a pipx install?** Run `pipx uninstall srw` so an old installed copy can never be picked up by mistake.
+
+---
+
+## 5. Verify
+
+```bash
+~/srw/bin/srw --version
+~/srw/bin/srw --help
 ```
 
 ---
 
-## 6. Verify installation
+## 6. Set up a batch folder and run
+
+`srw run` works on the directory you run it from: by default it reads `./Source`, writes logs, inventories and metadata to `./Documents`, and reads policies from `./MediaConch`. Give each batch its own folder with that structure (layout in [MANUAL.md](MANUAL.md#directory-structure)). The repo's `MediaConch/` folder contains the lab's `DPX_SMPTE-CORE.xml` and `WAV_policy.xml` — copy them into each batch folder's `MediaConch/`.
+
+Each batch folder also gets its own small launcher script, copied from the repo's template. It's where the (rarely used) `SKIP_STEPS` setting lives, so a skip can only ever affect the one folder whose launcher you edited:
 
 ```bash
-srw --help
-srw --version
+cp ~/srw/templates/run_srw.py "/media/smpl-5220r/RAID 1/RAWcooked_1/batch_1/"
+cd "/media/smpl-5220r/RAID 1/RAWcooked_1/batch_1"
+./run_srw.py run --output-dir /media/smpl-5220r/A/MKV
 ```
 
----
+If `srw` isn't cloned at `~/srw`, edit `SRW_REPO` at the top of `run_srw.py`. The launcher takes the same arguments as `srw` itself. `--output-dir` is required (it is where the `.mkv`, review `.mp4`, `.log` and hashes go).
 
-## 7. Set up your project directory
+**Several jobs at once:** open one terminal per batch folder, `cd` into each, and run `./run_srw.py run --output-dir …` in each. Each batch folder has its own `Documents/`, so process logs and resume state never overlap. Alternatively, `srw batch` can launch several folders from one TOML config (see [MANUAL.md](MANUAL.md#batch-mode)).
 
-`srw` expects a `Source/`, `Documents/`, and `MediaConch/` directory (paths are configurable via flags — see [MANUAL.md](MANUAL.md)). The MediaConch policy XML files (`DPX_SMPTE-CORE.xml`, `WAV_policy.xml`) are lab-specific and are not bundled with this repo; source them from your MediaConch installation or GUI export and place them in `MediaConch/`.
-
-```bash
-mkdir -p Source Documents MediaConch
-# copy your DPX sequence folders into Source/
-# copy DPX_SMPTE-CORE.xml and WAV_policy.xml into MediaConch/
-```
+**Updating launchers:** `git pull` updates `srw` itself; the launchers in your batch folders don't need to change.
 
 ---
 

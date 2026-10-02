@@ -32,7 +32,7 @@ project-directory/
     └── WAV_policy.xml                        # Required: WAV validation policy
 ```
 
-`srw` does not derive these paths from its own install location — each is a CLI flag (see below), so a single `srw` install can be pointed at any project directory or drive. `srw run` processes one such directory set; `srw batch` (see [below](#batch-mode)) launches several at once.
+`srw` does not derive these paths from where its own code lives — each is a CLI flag (see below) whose default is relative to the directory you run it from, so one clone of the repo can be pointed at any batch folder or drive. `srw` is not installed as a package: each batch folder holds a small `run_srw.py` launcher (template in [`templates/run_srw.py`](templates/run_srw.py)) that runs it from the clone — see [INSTALL_UBUNTU.md](INSTALL_UBUNTU.md). `srw run` processes one such directory set; `srw batch` (see [below](#batch-mode)) launches several at once.
 
 ---
 
@@ -116,14 +116,16 @@ Only the external tools actually used within the given range are required to be 
 
 ## Skipping steps (`SKIP_STEPS`)
 
-Skipping a workflow step is **not a normal operation**, and `srw` is deliberately built so it doesn't become one. There is no CLI flag for it: skipping requires editing the `SKIP_STEPS` list near the top of `srw/cli.py`, so it can't happen through a typo, shell history, or a copied command.
+Skipping a workflow step is **not a normal operation**, and `srw` is deliberately built so it doesn't become one. There is no CLI flag for it. Instead, each batch folder has its own small launcher script, `run_srw.py` (template: [`templates/run_srw.py`](templates/run_srw.py)), with a `SKIP_STEPS` list at the very top. Editing that list is the only way to skip a step, so it can't happen through a typo, shell history, or a copied command — and because the launcher lives in the batch folder, a skip applies **only to runs started from that folder**, never to your other batches or terminals.
 
 ```python
-SKIP_STEPS: list = []      # normal operation
-SKIP_STEPS = [3]           # e.g. skip Step 3 (vendor scan fails the "Project value present" DPX check)
+# top of run_srw.py, in the batch folder
+SRW_REPO = os.path.expanduser("~/srw")   # where the srw repo is cloned
+SKIP_STEPS = []                          # normal operation
+SKIP_STEPS = [3]                         # e.g. skip Step 3 (vendor scan fails the "Project value present" DPX check)
 ```
 
-When a listed step is reached, `srw`:
+While `SKIP_STEPS` is set, `srw` prints a yellow warning at startup listing the active skips. The launcher also refuses to run `srw batch` with a skip set, because batch jobs would not receive it. When a listed step is reached, `srw`:
 
 - prints a yellow `STEP N. <name> - SKIPPED BY USER` box on the terminal (colour is terminal-only, never written to the log)
 - writes a plain-text `>>> SKIPPED BY USER: Step N` marker, with timestamp, to the process log
@@ -353,6 +355,8 @@ For a sequence named `sequence_name`, after successful processing:
 ---
 
 ## Parallel processing notes
+
+The usual way to run jobs in parallel is one terminal per batch folder: `cd` into each batch folder and run `./run_srw.py run --output-dir …` in each. Each batch folder has its own `Documents/`, so process logs and resume state never overlap.
 
 `srw run` processes sequences sequentially within a single invocation. For parallel processing, run separate invocations against separate `--source-dir`/`--docs-dir` pairs — see [Batch mode](#batch-mode) below for a way to launch several at once from one command. RAWcooked's reversibility check is I/O- and CPU-intensive; test how many concurrent jobs your storage and platform can sustain before scaling up — low CPU/RAM usage in `htop` doesn't rule out an I/O ceiling, since RAWcooked work is typically bottlenecked on storage throughput rather than compute. Watch `iostat -x 1` or `iotop` against the actual RAID/NVMe devices while increasing concurrency, and stop once a device's `%util` saturates or errors start appearing — an unstable platform may also show the [segfault above](#rawcooked-segfault-on-some-amd-platforms-return-code--11) under load that a single job does not.
 

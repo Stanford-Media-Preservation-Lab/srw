@@ -709,3 +709,13 @@ class TestPreflightCheck:
         result = preflight_check(str(source), "seq1", config)
 
         assert result is True
+
+
+class TestSkipStepsWarning:
+    def test_empty_gives_no_warning(self):
+        assert cli.format_skip_steps_warning([]) == ""
+
+    def test_lists_each_skipped_step_by_name(self):
+        text = cli.format_skip_steps_warning([5, 3])
+        assert "SKIP_STEPS is active" in text
+        assert text.index("Step 3: MEDIACONCH DPX VALIDATION") < text.index("Step 5: MANIFEST GENERATION")

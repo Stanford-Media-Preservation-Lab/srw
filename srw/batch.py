@@ -123,6 +123,16 @@ def _job_command(job: BatchJob):
     return cmd
 
 
+def _job_env():
+    """Environment for each `python -m srw run` job: guarantees the srw package is
+    importable no matter where the job's working directory is, so `srw batch` works
+    from a plain clone of the repo (no pip/pipx install) as well as an installed copy."""
+    pkg_parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(p for p in (pkg_parent, env.get("PYTHONPATH", "")) if p)
+    return env
+
+
 def _run_job(job: BatchJob, log_dir: str):
     log_path = os.path.join(log_dir, f"{job.name}.log")
     start = datetime.now()
@@ -130,7 +140,7 @@ def _run_job(job: BatchJob, log_dir: str):
         log_file.write(f"srw batch — launching job '{job.name}' at {start.strftime('%Y-%m-%d %H:%M:%S')}\n")
         log_file.write(f"command: {' '.join(_job_command(job))}\n\n")
         log_file.flush()
-        process = subprocess.run(_job_command(job), stdout=log_file, stderr=subprocess.STDOUT)
+        process = subprocess.run(_job_command(job), stdout=log_file, stderr=subprocess.STDOUT, env=_job_env())
     elapsed = datetime.now() - start
     return job, process.returncode, elapsed, log_path
 

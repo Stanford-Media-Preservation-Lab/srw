@@ -4,9 +4,27 @@ srw — SMPL RAWcooked Workflow
 Stanford Media Preservation Lab
 
 Thin entry point. All logic lives in srw/cli.py.
+
+Runs straight from a clone of the repo, with no pip/pipx install: this file
+puts the repo root (the folder containing the `srw/` package) on sys.path, and
+exports it via PYTHONPATH so child processes (`srw batch` launches each job as
+`python -m srw run ...`) can import the package too.
+
+For day-to-day batch-folder runs (and the SKIP_STEPS setting) use the
+per-folder launcher instead: templates/run_srw.py.
 """
 
-from srw.cli import main
+import os
+import sys
+
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+os.environ["PYTHONPATH"] = os.pathsep.join(
+    p for p in (_REPO_ROOT, os.environ.get("PYTHONPATH", "")) if p
+)
+
+from srw.cli import main  # noqa: E402
 
 if __name__ == "__main__":
     main()

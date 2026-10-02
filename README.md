@@ -30,15 +30,20 @@ See [MANUAL.md](MANUAL.md) for full details on each step, the resume system, `--
 
 ## Skipping steps (`SKIP_STEPS`)
 
-Skipping a step is not a normal operation, so there is intentionally **no CLI flag** for it. To bypass specific steps for a run, edit the `SKIP_STEPS` list near the top of `srw/cli.py` (e.g. `SKIP_STEPS = [3]`). Each skipped step writes a `>>> SKIPPED BY USER: Step N` marker to the process log (and a yellow box on the terminal), and the resume system will not retry it unless you remove the number and delete or rename the process log. Skipping Step 2 leaves sidecar `.md5` files in the source folder (which breaks Step 6), and skipping Step 5 leaves the MKV without its conformance manifest — see [MANUAL.md](MANUAL.md#skipping-steps-skip_steps) before using it. Revert `SKIP_STEPS` to `[]` afterward.
+Skipping a step is not a normal operation, so there is intentionally **no CLI flag** for it. To bypass specific steps, edit the `SKIP_STEPS` list at the very top of the `run_srw.py` launcher in that batch folder (e.g. `SKIP_STEPS = [3]`) — so a skip applies only to runs started from that folder, and `srw` prints a yellow warning at startup while one is active. Each skipped step writes a `>>> SKIPPED BY USER: Step N` marker to the process log (and a yellow box on the terminal), and the resume system will not retry it unless you remove the number and delete or rename the process log. Skipping Step 2 leaves sidecar `.md5` files in the source folder (which breaks Step 6), and skipping Step 5 leaves the MKV without its conformance manifest — see [MANUAL.md](MANUAL.md#skipping-steps-skip_steps) before using it. Revert `SKIP_STEPS` to `[]` afterward.
 
 ---
 
 ## Quick start
 
+`srw` runs straight from a clone of this repo (no pip/pipx install). Copy `templates/run_srw.py` into a batch folder (the one containing `Source/`, `Documents/`, `MediaConch/`) and run it from there. In the examples below, `srw` stands for that launcher (`./run_srw.py`) or `~/srw/bin/srw`.
+
 ```bash
-srw run --output-dir /media/smpl-5220r/A/MKV
+cd "/media/smpl-5220r/RAID 1/RAWcooked_1/batch_1"
+./run_srw.py run --output-dir /media/smpl-5220r/A/MKV
 ```
+
+For several jobs at once, open one terminal per batch folder and run the same command in each.
 
 By default `srw run` reads sequences from `./Source`, writes logs/CSVs/XML metadata to `./Documents`, and reads MediaConch policies from `./MediaConch`. Override any of these:
 
@@ -84,7 +89,7 @@ There's no built-in concurrency cap — every configured batch launches at once 
 
 ## Installation
 
-See [INSTALL_UBUNTU.md](INSTALL_UBUNTU.md).
+No install: clone the repo and copy `templates/run_srw.py` into each batch folder. See [INSTALL_UBUNTU.md](INSTALL_UBUNTU.md).
 
 ## Documentation
 
