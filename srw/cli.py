@@ -21,7 +21,7 @@ import io
 from dataclasses import dataclass
 from typing import Optional
 
-__version__ = "1.4.1"
+__version__ = "1.5.0"
 
 DEFAULT_ATTACHMENT_SIZE = 5_000_000  # 5 MB; RAWcooked's own default is 1 MB
 
@@ -57,6 +57,34 @@ DISK_SPACE_HISTORICAL_PAD = 1.05
 INVENTORY_TOTAL_BYTES_MARKER = "INVENTORY_TOTAL_BYTES"
 
 TOTAL_STEPS = 10
+
+# ---------------------------------------------------------------------------
+# SKIP_STEPS — steps to bypass for this run.
+#
+# Add step numbers here to skip specific steps and write a permanent
+# "SKIPPED BY USER" marker to the process log instead of running them.
+# The resume system recognises the marker: re-running the script will not
+# re-attempt a skipped step unless you remove its number from this list and
+# delete (or rename) the process log.
+#
+# Use deliberately. Common cases:
+#   [3]  — vendor scan fails the "Project value present" DPX check
+#   [2]  — sidecar .md5 files were already relocated in a prior run
+#
+# WARNING – Step 2 side-effect: if Step 2 is skipped, per-file sidecar
+# .md5 files remain in the source folder.  RAWcooked --all (Step 6) will
+# try to embed each one as its own MKV attachment, breaking the encode.
+# Make sure the source folder is clear of stray .md5 files before Step 6.
+#
+# WARNING – Step 5 side-effect: the .md5 manifest written by Step 5 is what
+# RAWcooked --all embeds into the MKV.  Skipping Step 5 means the MKV will
+# have no conformance manifest attached.
+# ---------------------------------------------------------------------------
+SKIP_STEPS: list = []
+
+# ANSI colour codes — used for terminal output only; never written to the log.
+_ANSI_YELLOW = "\033[33m"
+_ANSI_RESET  = "\033[0m"
 
 STEP_NAMES = {
     1: "INVENTORY GENERATION",
@@ -214,6 +242,55 @@ def mark_step_complete(step_num):
     """Explicitly marks a step as complete in the log."""
     marker = f"Step {step_num}"
     write_log(f"\n>>> SUCCESS: {marker} completed successfully.")
+
+
+def is_step_skipped(step_marker):
+    """Checks the log file to see if a specific step was previously skipped by user."""
+    if not os.path.exists(LOG_FILE_PATH):
+        return False
+    search_string = f">>> SKIPPED BY USER: {step_marker}"
+    try:
+        with open(LOG_FILE_PATH, "r") as f:
+            log_content = f.read()
+        return search_string in log_content
+    except Exception:
+        return False
+
+
+def get_step_skip_timestamp(step_num):
+    """Retrieves the original timestamp for a previously-skipped step from the log."""
+    search_string = f">>> SKIPPED BY USER: Step {step_num}"
+    try:
+        with open(LOG_FILE_PATH, "r") as f:
+            for line in f:
+                if search_string in line:
+                    if line.startswith("[") and "]" in line:
+                        return line[1:line.index("]")]
+    except Exception:
+        pass
+    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def mark_step_skipped(step_num, step_name):
+    """Write a SKIPPED BY USER marker: yellow bracketed box to terminal, plain text to log."""
+    label = f" STEP {step_num}. {step_name} - SKIPPED BY USER "
+    border = "+" + "-" * len(label) + "+"
+    box_middle = "|" + label + "|"
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Terminal: yellow ANSI colour
+    for line in (border, box_middle, border):
+        print(f"[{timestamp}] {_ANSI_YELLOW}{line}{_ANSI_RESET}")
+    print(f"[{timestamp}] {_ANSI_YELLOW}>>> SKIPPED BY USER: Step {step_num}{_ANSI_RESET}")
+    print(f"[{timestamp}]")
+
+    # Log file: plain text (no ANSI codes)
+    if LOG_FILE_PATH:
+        with open(LOG_FILE_PATH, "a") as f:
+            for line in (border, box_middle, border):
+                f.write(f"[{timestamp}] {line}\n")
+            f.write(f"[{timestamp}] >>> SKIPPED BY USER: Step {step_num}\n")
+            f.write(f"[{timestamp}]\n")
 
 
 def write_banner(title):
@@ -654,7 +731,13 @@ def process_sequence(source_folder_path, config: Config):
     # 1. Inventory
     if is_step_complete("Step 1"):
         write_log("Step 1 (Inventory) already completed. Skipping...")
-        step_log.append((1, "INVENTORY GENERATION", get_step_completion_timestamp(1)))
+        step_log.append((1, "INVENTORY GENERATION", get_step_completion_timestamp(1), "completed"))
+    elif 1 in SKIP_STEPS or is_step_skipped("Step 1"):
+        if not is_step_skipped("Step 1"):
+            mark_step_skipped(1, "INVENTORY GENERATION")
+        else:
+            write_log("Step 1 (Inventory) previously skipped. Skipping...")
+        step_log.append((1, "INVENTORY GENERATION", get_step_skip_timestamp(1), "skipped"))
     else:
         write_banner("1. INVENTORY GENERATION")
         dpx_count = 0
@@ -682,7 +765,7 @@ def process_sequence(source_folder_path, config: Config):
             write_log(f"Inventory complete. Found {dpx_count} DPX files. Total: {format_total_size(total_bytes)}")
             write_log(f">>> {INVENTORY_TOTAL_BYTES_MARKER}: {total_bytes}", print_to_screen=False)
             mark_step_complete(1)
-            step_log.append((1, "INVENTORY GENERATION", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+            step_log.append((1, "INVENTORY GENERATION", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "completed"))
         except Exception as e:
             write_log(f"!!! ERROR in Step 1: {e}")
             return "Inventory Generation Error"
@@ -694,7 +777,13 @@ def process_sequence(source_folder_path, config: Config):
     # 2. Source Integrity
     if is_step_complete("Step 2"):
         write_log("Step 2 (Checksums) already completed. Skipping...")
-        step_log.append((2, "CHECKSUM VERIFICATION", get_step_completion_timestamp(2)))
+        step_log.append((2, "CHECKSUM VERIFICATION", get_step_completion_timestamp(2), "completed"))
+    elif 2 in SKIP_STEPS or is_step_skipped("Step 2"):
+        if not is_step_skipped("Step 2"):
+            mark_step_skipped(2, "CHECKSUM VERIFICATION")
+        else:
+            write_log("Step 2 (Checksums) previously skipped. Skipping...")
+        step_log.append((2, "CHECKSUM VERIFICATION", get_step_skip_timestamp(2), "skipped"))
     else:
         write_banner("2. CHECKSUM VERIFICATION")
         try:
@@ -724,7 +813,7 @@ def process_sequence(source_folder_path, config: Config):
             write_log(f"Relocated {moved_count} sidecar .md5 file(s) to: {sidecar_holding_dir}")
             write_log("(kept as a permanent baseline for re-verifying the original transfer -- not deleted)")
             mark_step_complete(2)
-            step_log.append((2, "CHECKSUM VERIFICATION", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+            step_log.append((2, "CHECKSUM VERIFICATION", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "completed"))
         except Exception as e:
             write_log(f"!!! ERROR in Step 2: {e}")
             return "Checksum Verification Error"
@@ -736,7 +825,13 @@ def process_sequence(source_folder_path, config: Config):
     # 3. MediaConch DPX Validation
     if is_step_complete("Step 3"):
         write_log("Step 3 (MediaConch DPX) already completed. Skipping...")
-        step_log.append((3, "MEDIACONCH DPX VALIDATION", get_step_completion_timestamp(3)))
+        step_log.append((3, "MEDIACONCH DPX VALIDATION", get_step_completion_timestamp(3), "completed"))
+    elif 3 in SKIP_STEPS or is_step_skipped("Step 3"):
+        if not is_step_skipped("Step 3"):
+            mark_step_skipped(3, "MEDIACONCH DPX VALIDATION")
+        else:
+            write_log("Step 3 (MediaConch DPX) previously skipped. Skipping...")
+        step_log.append((3, "MEDIACONCH DPX VALIDATION", get_step_skip_timestamp(3), "skipped"))
     else:
         write_banner("3. MEDIACONCH DPX VALIDATION")
         try:
@@ -754,7 +849,7 @@ def process_sequence(source_folder_path, config: Config):
                     return "MediaConch DPX Policy Failure"
                 write_log(f"  [VALID] {f_name}")
             mark_step_complete(3)
-            step_log.append((3, "MEDIACONCH DPX VALIDATION", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+            step_log.append((3, "MEDIACONCH DPX VALIDATION", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "completed"))
         except Exception as e:
             write_log(f"!!! ERROR in Step 3: {e}")
             return "MediaConch DPX Validation Error"
@@ -766,7 +861,13 @@ def process_sequence(source_folder_path, config: Config):
     # 4. MediaConch WAV Validation
     if is_step_complete("Step 4"):
         write_log("Step 4 (MediaConch WAV) already completed. Skipping...")
-        step_log.append((4, "MEDIACONCH WAV VALIDATION", get_step_completion_timestamp(4)))
+        step_log.append((4, "MEDIACONCH WAV VALIDATION", get_step_completion_timestamp(4), "completed"))
+    elif 4 in SKIP_STEPS or is_step_skipped("Step 4"):
+        if not is_step_skipped("Step 4"):
+            mark_step_skipped(4, "MEDIACONCH WAV VALIDATION")
+        else:
+            write_log("Step 4 (MediaConch WAV) previously skipped. Skipping...")
+        step_log.append((4, "MEDIACONCH WAV VALIDATION", get_step_skip_timestamp(4), "skipped"))
     else:
         write_banner("4. MEDIACONCH WAV VALIDATION")
         try:
@@ -786,7 +887,7 @@ def process_sequence(source_folder_path, config: Config):
                         return "MediaConch WAV Policy Failure"
                     write_log(f"  [VALID] {f_name}")
             mark_step_complete(4)
-            step_log.append((4, "MEDIACONCH WAV VALIDATION", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+            step_log.append((4, "MEDIACONCH WAV VALIDATION", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "completed"))
         except Exception as e:
             write_log(f"!!! ERROR in Step 4: {e}")
             return "MediaConch WAV Validation Error"
@@ -798,7 +899,13 @@ def process_sequence(source_folder_path, config: Config):
     # 5. Manifest Generation
     if is_step_complete("Step 5"):
         write_log("Step 5 (Manifest) already completed. Skipping...")
-        step_log.append((5, "MANIFEST GENERATION (.md5)", get_step_completion_timestamp(5)))
+        step_log.append((5, "MANIFEST GENERATION (.md5)", get_step_completion_timestamp(5), "completed"))
+    elif 5 in SKIP_STEPS or is_step_skipped("Step 5"):
+        if not is_step_skipped("Step 5"):
+            mark_step_skipped(5, "MANIFEST GENERATION (.md5)")
+        else:
+            write_log("Step 5 (Manifest) previously skipped. Skipping...")
+        step_log.append((5, "MANIFEST GENERATION (.md5)", get_step_skip_timestamp(5), "skipped"))
     else:
         write_banner("5. MANIFEST GENERATION (.md5)")
         write_log(f"  Writing manifest to source folder: {long_md5_path}")
@@ -813,7 +920,7 @@ def process_sequence(source_folder_path, config: Config):
                                     sha.update(chunk)
                             lf.write(f"{sha.hexdigest()}  {file}\n")
             mark_step_complete(5)
-            step_log.append((5, "MANIFEST GENERATION (.md5)", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+            step_log.append((5, "MANIFEST GENERATION (.md5)", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "completed"))
         except Exception as e:
             write_log(f"!!! ERROR in Step 5: {e}")
             return "Manifest Generation Error"
@@ -828,50 +935,77 @@ def process_sequence(source_folder_path, config: Config):
         f"'{source_folder_path}' -o '{mkv_path}'"
     )
 
-    step6_already_done = is_step_complete("Step 6")
-    if not run_step_verbose(6, "RAWCOOKED TRANSCODE", rc_cmd, parse_rawcooked=True):
-        return "RAWcooked Encoding Error"
-    step_log.append((6, "RAWCOOKED TRANSCODE", get_step_completion_timestamp(6)))
+    if 6 in SKIP_STEPS or is_step_skipped("Step 6"):
+        if not is_step_skipped("Step 6"):
+            mark_step_skipped(6, "RAWCOOKED TRANSCODE")
+        else:
+            write_log("Step 6 (RAWcooked Transcode) previously skipped. Skipping...")
+        step_log.append((6, "RAWCOOKED TRANSCODE", get_step_skip_timestamp(6), "skipped"))
+    else:
+        step6_already_done = is_step_complete("Step 6")
+        if not run_step_verbose(6, "RAWCOOKED TRANSCODE", rc_cmd, parse_rawcooked=True):
+            return "RAWcooked Encoding Error"
+        step_log.append((6, "RAWCOOKED TRANSCODE", get_step_completion_timestamp(6), "completed"))
 
-    if not step6_already_done and os.path.exists(rc_log_path):
-        prepend_rawcooked_log_header(rc_log_path)
+        if not step6_already_done and os.path.exists(rc_log_path):
+            prepend_rawcooked_log_header(rc_log_path)
 
-    if os.path.exists(rc_log_path):
-        with open(rc_log_path, 'r') as rcl:
-            for line in rcl:
-                if "?" in line or "reversibility check failed" in line.lower():
-                    write_log(f"!!! NOTE: RAWcooked bypassed a prompt: {line.strip()}")
+        if os.path.exists(rc_log_path):
+            with open(rc_log_path, 'r') as rcl:
+                for line in rcl:
+                    if "?" in line or "reversibility check failed" in line.lower():
+                        write_log(f"!!! NOTE: RAWcooked bypassed a prompt: {line.strip()}")
     write_log("")
     if config.end_step == 6:
         write_log("Stopping after Step 6 (--end-step 6).")
         return True
 
     # 7. Metadata Tags
-    if not os.path.exists(custom_xml):
-        write_log(f"CRITICAL: Missing '{source_folder_name}.xml'")
-        return "Missing Required XML Metadata"
-
-    if not run_step_verbose(7, "EMBED METADATA TAGS", f"mkvpropedit '{mkv_path}' --tags all:'{custom_xml}'"):
-        return "mkvpropedit Tagging Error"
-    step_log.append((7, "EMBED METADATA TAGS", get_step_completion_timestamp(7)))
+    if 7 in SKIP_STEPS or is_step_skipped("Step 7"):
+        if not is_step_skipped("Step 7"):
+            mark_step_skipped(7, "EMBED METADATA TAGS")
+        else:
+            write_log("Step 7 (Embed Metadata Tags) previously skipped. Skipping...")
+        step_log.append((7, "EMBED METADATA TAGS", get_step_skip_timestamp(7), "skipped"))
+    else:
+        if not os.path.exists(custom_xml):
+            write_log(f"CRITICAL: Missing '{source_folder_name}.xml'")
+            return "Missing Required XML Metadata"
+        if not run_step_verbose(7, "EMBED METADATA TAGS", f"mkvpropedit '{mkv_path}' --tags all:'{custom_xml}'"):
+            return "mkvpropedit Tagging Error"
+        step_log.append((7, "EMBED METADATA TAGS", get_step_completion_timestamp(7), "completed"))
     write_log("")
     if config.end_step == 7:
         write_log("Stopping after Step 7 (--end-step 7).")
         return True
 
     # 8. FFmpeg Review Copy
-    if not run_step_verbose(8, "GENERATE REVIEW DERIVATIVE", f"ffmpeg -i '{mkv_path}' -crf 18 -vf 'scale=-2:720' -pix_fmt yuv420p '{mp4_out}'"):
-        return "FFmpeg Derivative Error"
-    step_log.append((8, "GENERATE REVIEW DERIVATIVE", get_step_completion_timestamp(8)))
+    if 8 in SKIP_STEPS or is_step_skipped("Step 8"):
+        if not is_step_skipped("Step 8"):
+            mark_step_skipped(8, "GENERATE REVIEW DERIVATIVE")
+        else:
+            write_log("Step 8 (Review Derivative) previously skipped. Skipping...")
+        step_log.append((8, "GENERATE REVIEW DERIVATIVE", get_step_skip_timestamp(8), "skipped"))
+    else:
+        if not run_step_verbose(8, "GENERATE REVIEW DERIVATIVE", f"ffmpeg -i '{mkv_path}' -crf 18 -vf 'scale=-2:720' -pix_fmt yuv420p '{mp4_out}'"):
+            return "FFmpeg Derivative Error"
+        step_log.append((8, "GENERATE REVIEW DERIVATIVE", get_step_completion_timestamp(8), "completed"))
     write_log("")
     if config.end_step == 8:
         write_log("Stopping after Step 8 (--end-step 8).")
         return True
 
     # 9. MediaInfo Technical Metadata
-    if not run_mediainfo_step(9, mkv_path, mediainfo_path):
-        return "MediaInfo Metadata Error"
-    step_log.append((9, "MEDIAINFO TECHNICAL METADATA", get_step_completion_timestamp(9)))
+    if 9 in SKIP_STEPS or is_step_skipped("Step 9"):
+        if not is_step_skipped("Step 9"):
+            mark_step_skipped(9, "MEDIAINFO TECHNICAL METADATA")
+        else:
+            write_log("Step 9 (MediaInfo) previously skipped. Skipping...")
+        step_log.append((9, "MEDIAINFO TECHNICAL METADATA", get_step_skip_timestamp(9), "skipped"))
+    else:
+        if not run_mediainfo_step(9, mkv_path, mediainfo_path):
+            return "MediaInfo Metadata Error"
+        step_log.append((9, "MEDIAINFO TECHNICAL METADATA", get_step_completion_timestamp(9), "completed"))
     write_log("")
     if config.end_step == 9:
         write_log("Stopping after Step 9 (--end-step 9).")
@@ -879,13 +1013,24 @@ def process_sequence(source_folder_path, config: Config):
 
     # --- PROCESS SUMMARY (Steps 1-9) ---
     summary_timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    skipped_count = sum(1 for *_, status in step_log if status == "skipped")
+
     summary_lines = []
     summary_lines.append(f"[{summary_timestamp}] \n{'='*60}")
     summary_lines.append(f"[{summary_timestamp}]  PROCESS SUMMARY")
     summary_lines.append(f"[{summary_timestamp}] {'='*60}")
-    for step_num, step_name, step_ts in step_log:
-        summary_lines.append(f"[{step_ts}]  STEP: {step_num}. {step_name} - completed successfully")
-    summary_lines.append(f"[{summary_timestamp}] ** All processes completed successfully **")
+    for step_num, step_name, step_ts, status in step_log:
+        if status == "skipped":
+            summary_lines.append(f"[{step_ts}]  STEP: {step_num}. {step_name} - SKIPPED BY USER")
+        else:
+            summary_lines.append(f"[{step_ts}]  STEP: {step_num}. {step_name} - completed successfully")
+    if skipped_count:
+        summary_lines.append(
+            f"[{summary_timestamp}] ** All processes completed "
+            f"({skipped_count} step(s) skipped by user) **"
+        )
+    else:
+        summary_lines.append(f"[{summary_timestamp}] ** All processes completed successfully **")
     summary_lines.append(f"[{summary_timestamp}] ** Starting md5 checksum generation **")
     summary_lines.append(f"[{summary_timestamp}] {'='*60}\n")
 
@@ -898,6 +1043,11 @@ def process_sequence(source_folder_path, config: Config):
     # 10. Final Deliverable Hashes (MKV and RAWcooked log)
     if is_step_complete("Step 10"):
         write_log("Step 10 (Final Hashes) already completed. Skipping...")
+    elif 10 in SKIP_STEPS or is_step_skipped("Step 10"):
+        if not is_step_skipped("Step 10"):
+            mark_step_skipped(10, "FINAL DELIVERABLE HASHES")
+        else:
+            write_log("Step 10 (Final Hashes) previously skipped. Skipping...")
     else:
         write_banner("10. FINAL DELIVERABLE HASHES")
         try:
