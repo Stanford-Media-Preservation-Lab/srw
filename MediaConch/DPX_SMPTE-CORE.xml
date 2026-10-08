@@ -1,12 +1,12 @@
 <?xml version="1.0"?>
 <policy type="and" name="SMPL DPX conformance check">
-  <description>For checking vendor delivered DPX work at SMPL.</description>
+  <description>For checking vendor delivered DPX work at SMPL. Version 1.1 (hero), 2026-10-06. Adds checks for core fields 2 (Offset to image data) and 18 (Number of image elements).</description>
   <rule name="Format is DPX" value="Format" tracktype="General" occurrence="*" operator="=">DPX</rule>
   <rule name="File extension is DPX" value="FileExtension" tracktype="General" occurrence="*" operator="=">dpx</rule>
   <rule name="FileName value present" value="Generic section header/File information/FileName" occurrence="*" operator="exists" scope="mmt"/>
   <rule name="Creator value present" value="Generic section header/File information/Creator" occurrence="*" operator="exists" scope="mmt"/>
   <rule name="Project value present" value="Generic section header/File information/Project" occurrence="*" operator="exists" scope="mmt"/>
-  <rule name="Data sign is signed (0)" value="Generic section header/Image information/image element/Data sign" occurrence="*" operator="=" scope="mmt">0</rule>
+  <rule name="Data sign is unsigned (0)" value="Generic section header/Image information/image element/Data sign" occurrence="*" operator="=" scope="mmt">0</rule>
   <rule name="Image orientation (0)" value="Generic section header/Image information/Image orientation" occurrence="*" operator="=" scope="mmt">0</rule>
   <rule name="Packing is populated" value="Generic section header/Image information/image element/Packing" occurrence="*" operator="exists" scope="mmt"/>
   <rule name="Encoding is populated" value="Generic section header/Image information/image element/Encoding" occurrence="*" operator="exists" scope="mmt"/>
@@ -17,12 +17,15 @@
   <rule name="Sequence length" value="Industry specific header/Motion-picture film information/Sequence length (frames)" occurrence="*" operator="exists" scope="mmt"/>
   <rule name="Pixels per line" value="Generic section header/Image information/Pixels per line" occurrence="*" operator="&gt;" scope="mmt">0</rule>
   <rule name="Lines per image element" value="Generic section header/Image information/Lines per image element" occurrence="*" operator="&gt;" scope="mmt">0</rule>
+  <rule name="Offset to image data (field 2) present" value="Generic section header/File information/Offset to image data" occurrence="*" operator="exists" scope="mmt"/>
+  <rule name="Number of image elements (field 18) present" value="Generic section header/Image information/Number of image elements" occurrence="*" operator="exists" scope="mmt"/>
+  <rule name="Number of image elements is gt 0" value="Generic section header/Image information/Number of image elements" occurrence="*" operator="&gt;" scope="mmt">0</rule>
   <rule name="Description of Image element" value="Generic section header/Image information/image element/Description of image element" occurrence="*" operator="exists" scope="mmt"/>
   <policy type="or" name="Colorspace has no Alphas">
     <rule name="ColorSpace is NOT RGBA" value="ColorSpace" tracktype="Image" occurrence="*" operator="!=">RGBA</rule>
     <rule name="ColorSpace is NOT RGBA" value="ColorSpace" tracktype="Video" occurrence="*" operator="!=">RGBA</rule>
-    <rule name="ColorSpace is NOT ABGR" value="ColorSpace" tracktype="Image" occurrence="*" operator="!=">AGBR</rule>
-    <rule name="ColorSpace is NOT ABGR" value="ColorSpace" tracktype="Video" occurrence="*" operator="!=">AGBR</rule>
+    <rule name="ColorSpace is NOT ABGR" value="ColorSpace" tracktype="Image" occurrence="*" operator="!=">ABGR</rule>
+    <rule name="ColorSpace is NOT ABGR" value="ColorSpace" tracktype="Video" occurrence="*" operator="!=">ABGR</rule>
     <rule name="ColorSpace is NOT RGB / A" value="ColorSpace" tracktype="Image" occurrence="*" operator="!=">RGB / A</rule>
     <rule name="ColorSpace is NOT RGB / A" value="ColorSpace" tracktype="Video" occurrence="*" operator="!=">RGB / A</rule>
     <rule name="ColorSpace is NOT RGB/A" value="ColorSpace" tracktype="Image" occurrence="*" operator="!=">RGB/A</rule>
