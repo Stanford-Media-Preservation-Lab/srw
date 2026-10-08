@@ -152,7 +152,7 @@ Verifies each source file against its sidecar `.md5` checksum file. Halts immedi
 - **Output:** `{docs-dir}/{sequence_name}_source_md5_sidecars/` (relocated originals)
 
 ### Step 3: MediaConch DPX Validation
-Validates every `.dpx` file against the DPX policy. Checks format, magic number, bit depth, endianness, compression, color space, SMPTE header fields. Halts on first invalid file (in original sorted order) and logs its full policy output.
+Validates every `.dpx` file against the DPX policy. Checks format, magic number, bit depth, endianness, compression, color space, and the SMPTE ST 268 header fields (see [DPX policy](#dpx-policy) for exactly what the lab policy covers). Halts on first invalid file (in original sorted order) and logs its full policy output.
 
 Files are validated in batches of `--mediaconch-batch-size` (default 2000) per MediaConch invocation, not one process per file — DPX sequences routinely run to tens or hundreds of thousands of frames, and one `mediaconch` (plus historically an extra shell + `mktemp`) process per file doesn't scale. Each batch call uses MediaConch's CSV output (`-fc`) to get a fast pass/fail per file; only the specific file that fails gets a second, single-file invocation to capture the full human-readable policy detail for the log — everything else is exactly as verbose as before, just far fewer processes spawned to get there. See [Why MediaConch validation is batched](#why-mediaconch-validation-is-batched-not-one-process-per-file) below.
 
@@ -263,11 +263,43 @@ Batch processing itself is sequential: `srw` halts at the first sequence that er
 
 ## MediaConch policies
 
-`--mediaconch-dir` must contain the two policy files referenced by `--dpx-policy`/`--wav-policy` (`DPX_SMPTE-CORE.xml` and `WAV_policy.xml` by default). These aren't bundled with `srw` — they're lab-specific and should be sourced from your MediaConch installation or exported from the MediaConch GUI, then committed to your own deployment's `MediaConch/` directory.
+`--mediaconch-dir` must contain the two policy files referenced by `--dpx-policy`/`--wav-policy` (`DPX_SMPTE-CORE.xml` and `WAV_policy.xml` by default). The repo's `MediaConch/` directory holds SMPL's reference copies of both. They are lab-specific: another deployment should replace or adapt them (for example by exporting a policy from the MediaConch GUI) and commit its own versions to its `MediaConch/` directory.
 
 MediaConch validates file *contents*, not extensions — a JPEG renamed with a `.dpx` extension fails validation with detailed policy output logged. Files missing from the source directory simply don't appear in the validation log (glob won't find what isn't there) — the Step 0 pre-flight check's best-effort frame-numbering gap scan (see [above](#step-0-pre-flight-check)) is a separate, earlier check for exactly this.
 
 WAV validation is optional by design: many film scans are picture-only. If no `.wav` files are present, step 4 logs "No .wav files found (picture only)" and marks the step complete.
+
+### DPX policy
+
+`MediaConch/DPX_SMPTE-CORE.xml` is the lab's DPX conformance policy. **Current version: v1.1 (hero), 2026-10-06** (git tag `policy-v1.1`). The version and date are recorded in the policy's `<description>` element. The filename itself never carries the version, because `srw` looks for `DPX_SMPTE-CORE.xml` by name.
+
+**What it checks.** Every rule is a pass/fail check, and one failed rule fails the frame. Rules fall into two groups:
+
+- **SMPTE ST 268 core fields (required by the DPX standard):** magic number (`SDPX` or `XPDS`, which also fixes the byte order), offset to image data, version number of header format (V1.0 or V2.0), total image file size, image orientation, number of image elements (greater than 0), pixels per line and lines per image element (both greater than 0), data sign (unsigned), descriptor, transfer characteristic, colorimetric specification, bit depth, packing, encoding, and offset to data.
+- **Enhanced SMPL checks (beyond the standard):**
+  - Metadata that the FADGI 2019 DPX embedded-metadata guideline strongly recommends (file name, creator, project name) or recommends (input device name, input device serial number, frame position in sequence, sequence length).
+  - Other SMPL preservation requirements: frame rate present, border validity set to a valid value, description of image element present, file is DPX with a `.dpx` extension, width at least 2048 and height at least 1280 or 1536, uncompressed (raw, lossless), square pixels (aspect ratio 1.000), no alpha channel, a file creation date, and only these bit depth / descriptor / byte order combinations: 8-, 10-, 12- and 16-bit RGB, and 10-, 12- and 16-bit luma.
+
+**Not checked on purpose:** the formatting of date fields (FADGI recommends ISO 8601, but SMPTE ST 268 does not require it), the copyright field, and the source image date.
+
+**Limits to know about.**
+- Several rules (file name, creator, project name, input device fields, frame position, sequence length) test only that the field is *present and non-empty*, not that its contents are sensible. A field that holds garbled text still passes.
+- A field whose first byte is a null reads as empty, so such a frame fails the "present" rule for that field.
+- The "Frame rate of original" rule cannot match as written. The "Frame rate present" group still passes through the other two rules in the group.
+
+**Version history.**
+- **v1.0** — the lab's original policy, with these fixes: corrected the ABGR typo, corrected the "unsigned (0)" label on the data sign rule, and recorded the version and date in the description.
+- **v1.1 (hero)** — added checks for SMPTE core fields 2 (offset to image data: present) and 18 (number of image elements: present and greater than 0).
+
+**Checking a whole sequence by hand.** `srw` stops at the first invalid frame, so it does not show how many frames fail or which rules they fail. To see that, run MediaConch directly from inside the sequence folder and save the report:
+
+```bash
+find . -maxdepth 1 -iname '*.dpx' -print0 | sort -z | \
+  xargs -0 -r mediaconch -p /path/to/MediaConch/DPX_SMPTE-CORE.xml -ft > report.txt
+grep '^  Outcome:' report.txt | sort | uniq -c
+```
+
+The overall result for each frame is the line that starts with exactly two spaces and `Outcome:`. Lines for individual rules are indented further. MediaConch writes output only when each command finishes, so `report.txt` stays empty for a long time on a large sequence; `pgrep -a mediaconch` confirms it is still running.
 
 ---
 
@@ -319,6 +351,12 @@ Halt-on-first-invalid-file semantics and the full human-readable policy detail i
 **Current hypothesis:** a race condition or memory-mapping behavior in RAWcooked's reversibility check that manifests on some platforms but not others.
 
 **Practical workaround:** `srw`'s resume system handles intermittent failures automatically — just re-run. If a given machine reproduces this reliably, prefer a different machine for reversal-heavy work until upstream resolves it.
+
+### No live progress output during Step 3
+
+**Symptom:** Step 3 can appear to hang. MediaConch results are logged only after each batch of `--mediaconch-batch-size` files (default 2000) returns, so the terminal shows nothing between batches. On a 16mm sequence with roughly 37 MB frames (about 2 frames per second), the gap was around 17 minutes between updates.
+
+**Status:** known and expected. The step is working, and the log eventually shows each batch. A live progress counter is planned for a later revision. Until then, `pgrep -a mediaconch` confirms the validation process is still running.
 
 ### RAWcooked reversibility data must be the last attachment
 See [Key design decisions](#why-there-is-no-post-encode-attachment-step) above. Confirmed by extracting and re-attaching the reversibility data in last position, which restored reversal functionality.
@@ -443,5 +481,7 @@ Each job's full console output (identical to what `srw run` would print directly
 | Pre-flight: `INSUFFICIENT DISK SPACE` | Not enough free space on `--output-dir` for the source size times the (estimated or explicit) margin | Free up space, point `--output-dir` at a drive with more room, or set `--disk-space-margin` explicitly if the estimate is a false positive |
 | `CRITICAL ERROR: Missing MD5 for {file}` | Sidecar `.md5` missing for a source file | Add the missing sidecar checksum before re-running |
 | `[INVALID] {file}` in step 3/4 | File fails MediaConch policy | Check the logged policy output; the file's actual content (not its extension) failed a rule |
+| Step 3 stops at the first invalid frame but you need to know how many frames fail, and which rules | Step 3 halts on the first invalid file by design | Run MediaConch over the whole sequence by hand; see [DPX policy](#dpx-policy) |
+| Step 3 prints nothing for many minutes | Results are logged only after each `--mediaconch-batch-size` batch returns; there is no live progress output yet (see [Known issues](#known-issues-and-investigations)) | Normal. Check that it is running with `pgrep -a mediaconch` |
 | `CRITICAL: Missing '{sequence_name}.xml'` | No metadata XML in `--docs-dir` | Add `{docs-dir}/{sequence_name}.xml` before re-running (pre-flight normally catches this first) |
 | Return code -11 during step 6 | See [Known issues](#known-issues-and-investigations) | Re-run; the resume system will retry step 6 |
